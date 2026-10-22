@@ -63,7 +63,7 @@ void stateDefaultLayout() {
   gState.settings.brightness = 200;
   gState.settings.sleep_sec = 60;
   gState.settings.rotation = 3;
-  gState.settings.flags = 0b0110;  // Celsius + WiFi enabled, 24-hour, no seconds
+  gState.settings.flags = 0b1000110;  // Celsius + WiFi enabled, 24-hour, no seconds
   gState.settings.current_page = 0;
 
   memset(&gState.location, 0, sizeof(gState.location));

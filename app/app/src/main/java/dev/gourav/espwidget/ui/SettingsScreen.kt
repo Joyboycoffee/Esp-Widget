@@ -212,7 +212,7 @@ fun SettingsScreen(state: AppState, onRequestPermissions: () -> Unit) {
                 ToggleRow("Wi-Fi while charging", "Network is set up on the Sync tab", settings.wifiEnabled) {
                     AppGraph.repository.setSettings(settings.copy(wifiEnabled = it))
                 }
-                ToggleRow("Fix photo colours", "Turn on if the photo looks blue (swaps red and blue)", settings.photoSwapRb) {
+                ToggleRow("Fix photo colours", "Swaps red and blue on the photo; turn off if colours look wrong", settings.photoSwapRb) {
                     AppGraph.repository.setSettings(settings.copy(photoSwapRb = it))
                 }
             }
