@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.EspWidget" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorAccent">#F4B8A4</item>
+        <item name="android:windowBackground">#FDF8F3</item>
+        <item name="android:navigationBarColor">#FDF8F3</item>
+        <item name="android:statusBarColor">#FDF8F3</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

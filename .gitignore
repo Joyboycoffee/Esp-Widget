@@ -1,0 +1,36 @@
+# PlatformIO
+firmware/.pio/
+firmware/.vscode/
+
+# Android / Gradle
+app/.gradle/
+app/build/
+app/app/build/
+app/local.properties
+*.iml
+.idea/
+
+# Release signing (keep the JKS and properties locally; back them up)
+app/keystore.properties
+app/keystore/*.jks
+app/keystore/*.keystore
+
+# Desktop flasher build environment and generated assets
+.flasher-venv/
+flasher/build/
+flasher/dist/
+dist/
+__pycache__/
+*.py[cod]
+flasher/esp_flasher/assets/*.bin
+flasher/esp_flasher/assets/firmware-manifest.json
+
+# OS / editors
+.DS_Store
+Thumbs.db
+*.log
+*.zip
+ui.xml
+
+# Keep verification screenshots (they are referenced by the README)
+!screenshots/*.png

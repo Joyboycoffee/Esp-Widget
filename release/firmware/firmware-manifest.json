@@ -1,0 +1,13 @@
+{
+    "name":  "ESP Widget",
+    "version":  "1.0.0",
+    "built_utc":  "2026-10-22T15:14:04Z",
+    "chip":  "esp32c3",
+    "flash_mode":  "dio",
+    "flash_freq":  "80m",
+    "flash_size":  "4MB",
+    "offset":  "0x0",
+    "file":  "esp-widget-1.0.0-full.bin",
+    "size":  2123936,
+    "sha256":  "ac65f2f675f083e006d87facdd8e9396f685030b3bbbaba9417091b3379b5d8c"
+}
