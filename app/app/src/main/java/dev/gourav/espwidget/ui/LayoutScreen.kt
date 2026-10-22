@@ -121,6 +121,7 @@ fun LayoutScreen(state: AppState, onPreviewPage: (Int) -> Unit) {
             DevicePreview(
                 state,
                 controlledPage = page,
+                showStocksMode = false,
                 onPageChange = {
                     page = it
                     onPreviewPage(it)

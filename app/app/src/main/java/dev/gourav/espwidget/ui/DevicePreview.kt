@@ -86,7 +86,23 @@ fun DevicePreview(
             shape = RoundedCornerShape(34.dp),
             color = Color(0xFFEAE2D8),
             shadowElevation = 12.dp,
-            modifier = Modifier.padding(6.dp),
+            modifier = Modifier.padding(6.dp)
+                        .pointerInput(pages.size, page) {
+                            // Swipe the preview to flip the page here and on the widget.
+                            var total = 0f
+                            detectHorizontalDragGestures(
+                                onDragStart = { total = 0f },
+                                onDragEnd = {
+                                    if (kotlin.math.abs(total) > 40f && pages.size > 1) {
+                                        val next = if (total < 0) page + 1 else page - 1
+                                        val wrapped = (next % pages.size + pages.size) % pages.size
+                                        selected = wrapped
+                                        onPageChange(wrapped)
+                                    }
+                                },
+                                onHorizontalDrag = { _, delta -> total += delta },
+                            )
+                        },
         ) {
             Column(
                 modifier = Modifier
@@ -99,22 +115,6 @@ fun DevicePreview(
                         .clip(RoundedCornerShape(20.dp))
                         .background(Paper)
                         .border(1.dp, Line, RoundedCornerShape(20.dp))
-                        .pointerInput(pages.size, page) {
-                            // Swipe the preview to flip the page here and on the widget.
-                            var total = 0f
-                            detectHorizontalDragGestures(
-                                onDragStart = { total = 0f },
-                                onDragEnd = {
-                                    if (kotlin.math.abs(total) > 60f && pages.size > 1) {
-                                        val next = if (total < 0) page + 1 else page - 1
-                                        val wrapped = (next % pages.size + pages.size) % pages.size
-                                        selected = wrapped
-                                        onPageChange(wrapped)
-                                    }
-                                },
-                                onHorizontalDrag = { _, delta -> total += delta },
-                            )
-                        }
                         .padding(9.dp),
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {

@@ -35,7 +35,10 @@ inline int Y(int y) { return y - s_oy; }
 
 // Full-screen "stocks only" mode (settings flag 0x20) and dark theme (0x10).
 inline bool stocksMode() { return (gState.settings.flags & 0x20) != 0; }
-inline bool photoSwapRB() { return (gState.settings.flags & 0x40) != 0; }
+// The panel shows red and blue swapped relative to true colour (the diagnostics
+// swatches prove it) while the UI palette is tuned for it, so photos always need
+// their red/blue exchanged to look right.
+inline bool photoSwapRB() { return true; }
 inline bool darkTheme() { return (gState.settings.flags & 0x10) != 0; }
 int s_stockPage = 0;
 
