@@ -58,6 +58,8 @@ import dev.gourav.espwidget.data.AppState
 import dev.gourav.espwidget.data.PageModel
 import dev.gourav.espwidget.data.SlotModel
 import dev.gourav.espwidget.data.accentColor
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.delay
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -97,6 +99,22 @@ fun DevicePreview(
                         .clip(RoundedCornerShape(20.dp))
                         .background(Paper)
                         .border(1.dp, Line, RoundedCornerShape(20.dp))
+                        .pointerInput(pages.size, page) {
+                            // Swipe the preview to flip the page here and on the widget.
+                            var total = 0f
+                            detectHorizontalDragGestures(
+                                onDragStart = { total = 0f },
+                                onDragEnd = {
+                                    if (kotlin.math.abs(total) > 60f && pages.size > 1) {
+                                        val next = if (total < 0) page + 1 else page - 1
+                                        val wrapped = (next % pages.size + pages.size) % pages.size
+                                        selected = wrapped
+                                        onPageChange(wrapped)
+                                    }
+                                },
+                                onHorizontalDrag = { _, delta -> total += delta },
+                            )
+                        }
                         .padding(9.dp),
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -529,6 +547,24 @@ private fun MiniWidgetContent(type: Int, option: Int, accent: Int, hero: Boolean
                 )
             } else {
                 MiniEmpty("Send a photo", hero)
+            }
+        }
+        10 -> {
+            val pb = p.phoneBattery
+            val known = pb.updated != 0L
+            val color = if (pb.charging) Good else if (known && pb.percent <= 20) Bad else Color(accentColor(accent))
+            Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+                Text(
+                    if (known) "${pb.percent}%" else "—",
+                    fontSize = if (hero) 26.sp else 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Ink,
+                )
+                Text(if (pb.charging) "phone charging" else "phone", fontSize = 7.sp, color = Muted)
+                Spacer(Modifier.height(4.dp))
+                Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Line)) {
+                    if (known) Box(Modifier.fillMaxWidth((pb.percent / 100f).coerceIn(0f, 1f)).height(4.dp).background(color))
+                }
             }
         }
         else -> MiniEmpty("Empty", hero)

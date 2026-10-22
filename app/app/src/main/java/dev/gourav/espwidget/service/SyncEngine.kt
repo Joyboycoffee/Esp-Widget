@@ -26,6 +26,7 @@ import dev.gourav.espwidget.protocol.LocationPayload
 import dev.gourav.espwidget.protocol.MediaPayload
 import dev.gourav.espwidget.protocol.Msg
 import dev.gourav.espwidget.protocol.NotificationPayload
+import dev.gourav.espwidget.protocol.PhoneBatteryPayload
 import dev.gourav.espwidget.protocol.PhotoBeginPayload
 import dev.gourav.espwidget.protocol.SettingsPayload
 import dev.gourav.espwidget.protocol.StatusPayload
@@ -288,6 +289,7 @@ class SyncEngine(
         state.media.takeIf { it.valid }?.let { sendMedia(it) }
         state.calendar.takeIf { it.valid }?.let { sendCalendar(it) }
         state.steps.takeIf { it.valid }?.let { sendSteps(it) }
+        if (state.phoneBattery.updated != 0L) sendPhoneBattery(state.phoneBattery)
         sendLocation(state)
         repo.setLastSync(System.currentTimeMillis() / 1000)
     }
@@ -313,8 +315,17 @@ class SyncEngine(
             }
         }
         if (next.notifications.valid && prev.notifications != next.notifications) { sendNotification(next.notifications); sent = true }
+        if (!next.notifications.valid && prev.notifications.valid) {
+            // Cleared on the phone: an all-zero message clears it on the widget too.
+            ble.send(Msg.NOTIFICATION, NotificationPayload("", "", "", 0, 0).encode()); sent = true
+        }
         if (next.media.valid && prev.media != next.media) { sendMedia(next.media); sent = true }
         if (next.calendar.valid && prev.calendar != next.calendar) { sendCalendar(next.calendar); sent = true }
+        val pbPrev = prev.phoneBattery
+        val pbNext = next.phoneBattery
+        if (pbNext.updated != 0L && (pbNext.percent != pbPrev.percent || pbNext.charging != pbPrev.charging)) {
+            sendPhoneBattery(pbNext); sent = true
+        }
         // Steps tick constantly while walking; batch them so the widget is not
         // redrawn for every single step.
         val stepsChanged = kotlin.math.abs(next.steps.steps - prev.steps.steps) >= 25 ||
@@ -344,6 +355,7 @@ class SyncEngine(
             showSeconds = s.showSeconds,
             darkTheme = resolveDark(s.themeMode),
             stocksMode = s.stocksMode,
+            photoSwapRb = s.photoSwapRb,
             // Ignored by firmware 1.1+: the widget owns which page is showing.
             currentPage = 0,
         )
@@ -380,6 +392,10 @@ class SyncEngine(
 
     private fun sendCalendar(it: dev.gourav.espwidget.data.CalendarModel) {
         ble.send(Msg.CALENDAR, CalendarPayload(it.title, it.start, it.allDay, it.location, it.updated).encode())
+    }
+
+    private fun sendPhoneBattery(b: PhoneBattery) {
+        ble.send(Msg.PHONE_BATTERY, PhoneBatteryPayload(b.percent, b.charging, b.updated).encode())
     }
 
     private fun sendSteps(it: StepsModel) {
@@ -511,6 +527,12 @@ class SyncEngine(
         ble.send(Msg.STATUS_REQ)
     }
 
+    /** Make the widget show [page] (used when swiping the on-screen preview). */
+    fun setWidgetPage(page: Int) {
+        if (!ble.connection.value.connected) return
+        ble.send(Msg.COMMAND, byteArrayOf(3, page.coerceIn(0, 127).toByte(), 0, 0))
+    }
+
     /** Turn the widget's screen on (it must be connected over Bluetooth). */
     fun wakeWidgetScreen() {
         ble.send(Msg.COMMAND, byteArrayOf(1, 0, 0, 0))
@@ -563,7 +585,16 @@ class SyncEngine(
         val resolver = context.contentResolver
         val bytes = runCatching {
             val input = resolver.openInputStream(uri) ?: return@runCatching null
-            val bitmap = android.graphics.BitmapFactory.decodeStream(input)
+            val bitmap = android.graphics.BitmapFactory.decodeStream(
+                input,
+                null,
+                android.graphics.BitmapFactory.Options().apply {
+                    // Wide-gamut photos (Display P3) must be converted to sRGB or they
+                    // look washed out on the widget's sRGB panel.
+                    inPreferredColorSpace = android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.SRGB)
+                    inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+                },
+            )
             input.close()
             bitmap ?: return@runCatching null
             val size = minOf(bitmap.width, bitmap.height)
@@ -575,10 +606,10 @@ class SyncEngine(
                 size,
             )
             val scaled = android.graphics.Bitmap.createScaledBitmap(cropped, 240, 240, true)
-            var quality = 78
+            var quality = 90
             var out = java.io.ByteArrayOutputStream()
             scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, out)
-            while (out.size() > 40_000 && quality > 30) {
+            while (out.size() > 44_000 && quality > 40) {
                 quality -= 8
                 out = java.io.ByteArrayOutputStream()
                 scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, out)

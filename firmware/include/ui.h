@@ -6,6 +6,7 @@ void uiRender();
 void uiRenderHeader();
 void uiClearAndRender();
 void uiNextPage(int delta);
+void uiSetPage(int page);
 bool uiDiagActive();
 void uiToggleDiag();
 void uiApplyRotation();

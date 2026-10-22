@@ -58,6 +58,7 @@ void stateDefaultLayout() {
 
   gState.layout.page[4].template_id = espw::TemplateGrid;
   for (int i = 0; i < 4; ++i) clearSlot(gState.layout.page[4], i);
+  setSlot(gState.layout.page[4], 3, espw::WidgetPhoneBattery, 0, espw::AccentSage);
 
   gState.settings.brightness = 200;
   gState.settings.sleep_sec = 60;

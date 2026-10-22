@@ -35,6 +35,7 @@ inline int Y(int y) { return y - s_oy; }
 
 // Full-screen "stocks only" mode (settings flag 0x20) and dark theme (0x10).
 inline bool stocksMode() { return (gState.settings.flags & 0x20) != 0; }
+inline bool photoSwapRB() { return (gState.settings.flags & 0x40) != 0; }
 inline bool darkTheme() { return (gState.settings.flags & 0x10) != 0; }
 int s_stockPage = 0;
 
@@ -300,6 +301,36 @@ void drawWeather(const Rect& r, uint16_t accent, bool hero) {
       ellipsized(weatherLabel(w.code), r.x + 10, r.y + 54, r.w - 20, C_MUTED);
       ellipsized(hi, r.x + 10, r.y + 68, r.w - 20, C_MUTED);
     }
+  }
+}
+
+void drawPhoneBattery(const Rect& r, uint16_t accent, bool hero) {
+  const bool known = gState.phoneBatteryValid;
+  const int level = known ? constrain(static_cast<int>(gState.phoneBattery.percent), 0, 100) : 0;
+  const bool charging = known && gState.phoneBattery.charging;
+  char pct[8];
+  if (known) snprintf(pct, sizeof(pct), "%d%%", level);
+  else strlcpy(pct, "--", sizeof(pct));
+  const char* label = !known ? "Waiting for phone" : charging ? "Phone charging" : "Phone";
+  const uint16_t color = charging ? C_GOOD : (known && level <= 20) ? C_DANGER : accent;
+  if (hero) {
+    cv->setFont(&Fredoka44);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(pct, r.x + 18, r.y + 7);
+    icons::battery(*cv, r.x + 132, r.y + 14, 62, 30, level, color);
+    cv->fillRoundRect(r.x + 18, r.y + 58, r.w - 36, 7, 3, C_LINE);
+    if (level > 0) cv->fillRoundRect(r.x + 18, r.y + 58, (r.w - 36) * level / 100, 7, 3, color);
+    cv->setFont(&Fredoka16);
+    ellipsized(label, r.x + 18, r.y + 70, r.w - 36, charging ? C_GOOD : C_MUTED);
+  } else {
+    cv->setFont(&Fredoka20);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(pct, r.x + 10, r.y + 10);
+    icons::battery(*cv, r.x + r.w - 38, r.y + 12, 28, 14, level, color);
+    cv->fillRoundRect(r.x + 10, r.y + 36, r.w - 20, 4, 2, C_LINE);
+    if (level > 0) cv->fillRoundRect(r.x + 10, r.y + 36, (r.w - 20) * level / 100, 4, 2, color);
+    cv->setFont(&Fredoka12);
+    ellipsized(label, r.x + 10, r.y + 48, r.w - 20, charging ? C_GOOD : C_MUTED);
   }
 }
 
@@ -661,6 +692,17 @@ void drawPhoto(const Rect& r, uint16_t accent, bool hero) {
     cv->setClipRect(r.x, r.y, r.w, r.h);
     cv->drawJpgFile(LittleFS, "/photo.jpg", r.x, r.y, r.w, r.h, 0, 0, scale, scale,
                     lgfx::datum_t::middle_center);
+    if (photoSwapRB()) {
+      // Panel/JPEG channel order mismatch: swap red and blue in the drawn area.
+      const int y0 = max(r.y, 0), y1 = min(r.y + r.h, static_cast<int>(cv->height()));
+      const int x0 = max(r.x, 0), x1 = min(r.x + r.w, static_cast<int>(cv->width()));
+      for (int yy = y0; yy < y1; ++yy) {
+        for (int xx = x0; xx < x1; ++xx) {
+          const auto c = cv->readPixelRGB(xx, yy);
+          cv->writePixel(xx, yy, cv->color888(c.B8(), c.G8(), c.R8()));
+        }
+      }
+    }
     trimCorners(r, 16, C_BG);
     cv->drawRoundRect(r.x, r.y, r.w, r.h, 16, C_LINE);
     return;
@@ -686,6 +728,7 @@ void drawWidget(const espw::SlotConfig& slot, const Rect& r, bool hero) {
     case espw::WidgetSteps: drawSteps(r, accent, hero); break;
     case espw::WidgetText: drawText(r, accent, hero, slot.option); break;
     case espw::WidgetPhoto: drawPhoto(r, accent, hero); break;
+    case espw::WidgetPhoneBattery: drawPhoneBattery(r, accent, hero); break;
     default: {
       cv->setFont(&Fredoka12);
       cv->setTextColor(C_MUTED, C_CARD);
@@ -992,6 +1035,13 @@ void drawDiag() {
   put("Page %d of %d", stateCurrentPage() + 1, statePageCount());
   cv->setTextColor(C_MUTED, C_BG);
   cv->drawString("Tap to close", 8, Y(6 + row * 17));
+  // Colour check: these should read red, green, blue, white. If red looks
+  // blue, turn on "Fix photo colours" in the app.
+  const int sy = Y(6 + row * 17);
+  cv->fillRect(140, sy, 22, 14, cv->color888(255, 0, 0));
+  cv->fillRect(164, sy, 22, 14, cv->color888(0, 255, 0));
+  cv->fillRect(188, sy, 22, 14, cv->color888(0, 0, 255));
+  cv->fillRect(212, sy, 22, 14, cv->color888(255, 255, 255));
 }
 
 // Draws every element that intersects the band [y, y+h) and pushes it.
@@ -1120,6 +1170,22 @@ void uiNextPage(int delta) {
   // Persist lazily: writing NVS on every tap is slow and wears the flash.
   gState.pageSaveAt = millis() + 5000;
   gState.statusDirty = true;
+  renderAll();
+  gState.dirty = false;
+  gState.lastActivityMs = millis();
+}
+
+void uiSetPage(int page) {
+  if (stocksMode()) {
+    const int pages = stockPageCount();
+    s_stockPage = ((page % pages) + pages) % pages;
+  } else {
+    const uint8_t count = statePageCount();
+    if (page < 0 || page >= count || page == stateCurrentPage()) return;
+    gState.settings.current_page = static_cast<uint8_t>(page);
+    gState.pageSaveAt = millis() + 5000;
+    gState.statusDirty = true;
+  }
   renderAll();
   gState.dirty = false;
   gState.lastActivityMs = millis();

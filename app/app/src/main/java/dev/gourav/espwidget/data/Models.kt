@@ -54,6 +54,7 @@ data class SettingsModel(
     val themeMode: Int = 0,
     /** Use the whole widget display for the stock watchlist. */
     val stocksMode: Boolean = false,
+    val photoSwapRb: Boolean = false,
 )
 
 @Serializable
@@ -224,5 +225,6 @@ fun widgetName(type: Int): String = when (type) {
     7 -> "Steps"
     8 -> "Note"
     9 -> "Photo"
+    10 -> "Phone battery"
     else -> "Empty"
 }

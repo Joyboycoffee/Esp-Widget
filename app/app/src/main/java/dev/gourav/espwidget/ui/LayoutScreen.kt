@@ -220,7 +220,7 @@ private fun SlotEditor(
                                 menuOpen = false
                             },
                         )
-                        (0..9).forEach { type ->
+                        (0..10).forEach { type ->
                             DropdownMenuItem(
                                 text = { Text(widgetName(type)) },
                                 onClick = {

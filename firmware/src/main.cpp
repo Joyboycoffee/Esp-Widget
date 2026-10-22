@@ -55,6 +55,14 @@ void handleRemoteCommands() {
     gState.lastActivityMs = millis();
     if (s_screenOff) screenOn();
   }
+  if (gState.pageRequested >= 0) {
+    const int page = gState.pageRequested;
+    gState.pageRequested = -1;
+    if (!s_screenOff) {
+      uiSetPage(page);
+      s_lastRender = millis();
+    }
+  }
   if (gState.sleepRequested && static_cast<int32_t>(millis() - gState.sleepAt) >= 0) {
     gState.sleepRequested = false;
     if (gState.pageSaveAt) stateSaveSettings();

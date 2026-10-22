@@ -13,7 +13,8 @@ enum class WidgetType(val id: Int, val title: String) {
     CALENDAR(6, "Calendar"),
     STEPS(7, "Steps"),
     TEXT(8, "Note"),
-    PHOTO(9, "Photo");
+    PHOTO(9, "Photo"),
+    PHONE_BATTERY(10, "Phone battery");
 
     companion object {
         fun from(id: Int): WidgetType? = entries.firstOrNull { it.id == id }
@@ -77,6 +78,7 @@ data class SettingsPayload(
     val currentPage: Int = 0,
     val darkTheme: Boolean = false,
     val stocksMode: Boolean = false,
+    val photoSwapRb: Boolean = false,
 ) {
     fun encode(): ByteArray {
         var flags = 0
@@ -86,6 +88,7 @@ data class SettingsPayload(
         if (showSeconds) flags = flags or 0x08
         if (darkTheme) flags = flags or 0x10
         if (stocksMode) flags = flags or 0x20
+        if (photoSwapRb) flags = flags or 0x40
         return Wire.littleEndian(8)
             .put(brightness.toByte()).put(sleepSec.toByte()).put(rotation.toByte())
             .put(flags.toByte()).put(currentPage.toByte()).put(0).put(0).put(0).array()
@@ -250,6 +253,12 @@ data class CalendarPayload(
             return CalendarPayload(title, start, allDay, location, updated)
         }
     }
+}
+
+data class PhoneBatteryPayload(val percent: Int, val charging: Boolean, val updated: Long) {
+    fun encode(): ByteArray = Wire.littleEndian(6)
+        .put(percent.coerceIn(0, 100).toByte()).put((if (charging) 1 else 0).toByte())
+        .putInt(updated.toInt()).array()
 }
 
 data class StepsPayload(val steps: Long, val goal: Long, val updated: Long) {

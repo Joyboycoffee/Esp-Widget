@@ -31,6 +31,7 @@ enum class MsgType : uint8_t {
   Steps = 0x17,
   Text = 0x18,
   Location = 0x19,
+  PhoneBattery = 0x1A,  // payload: PhoneBatteryPayload (phone -> widget)
   Layout = 0x20,
   Settings = 0x21,
   WifiScan = 0x22,
@@ -62,7 +63,8 @@ enum WidgetType : uint8_t {
   WidgetSteps = 7,
   WidgetText = 8,
   WidgetPhoto = 9,
-  WidgetCount = 10,
+  WidgetPhoneBattery = 10,
+  WidgetCount = 11,
 };
 
 enum PageTemplate : uint8_t {
@@ -141,6 +143,12 @@ struct BatteryPayload {
   uint16_t millivolts;
   uint8_t charging;
   uint8_t usb;
+  uint32_t updated;
+};
+
+struct PhoneBatteryPayload {
+  uint8_t percent;
+  uint8_t charging;
   uint32_t updated;
 };
 
@@ -247,6 +255,7 @@ struct WifiSetPayload {
 enum Command : uint8_t {
   CmdWakeScreen = 1,  // turn the screen on and keep it awake for a while
   CmdDeepSleep = 2,   // radios off, screen off; only the touch button wakes it
+  CmdSetPage = 3,     // show page reserved[0] (swipe on the phone preview)
 };
 
 struct CommandPayload {

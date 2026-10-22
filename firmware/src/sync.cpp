@@ -130,9 +130,10 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
         }
       } else applied = false;
       break;
-    case espw::MsgType::Battery:
-      if (len >= sizeof(espw::BatteryPayload)) {
-        memcpy(&gState.battery, payload, sizeof(espw::BatteryPayload));
+    case espw::MsgType::PhoneBattery:
+      if (len >= sizeof(espw::PhoneBatteryPayload)) {
+        memcpy(&gState.phoneBattery, payload, sizeof(espw::PhoneBatteryPayload));
+        gState.phoneBatteryValid = gState.phoneBattery.updated != 0;
         gState.dirty = true;
       } else applied = false;
       break;
@@ -149,7 +150,7 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
     case espw::MsgType::Notification:
       if (len >= sizeof(espw::NotificationPayload)) {
         memcpy(&gState.notification, payload, sizeof(gState.notification));
-        gState.notificationValid = true;
+        gState.notificationValid = gState.notification.updated != 0;  // all-zero = cleared
         gState.dirty = true;
       } else applied = false;
       break;
@@ -337,6 +338,9 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
       if (len >= 1) {
         // Acted on by loop() after the ACK has gone out.
         if (payload[0] == espw::CmdWakeScreen) {
+          gState.wakeRequested = true;
+        } else if (payload[0] == espw::CmdSetPage) {
+          gState.pageRequested = len >= 2 ? static_cast<int8_t>(payload[1]) : -1;
           gState.wakeRequested = true;
         } else if (payload[0] == espw::CmdDeepSleep) {
           gState.sleepRequested = true;

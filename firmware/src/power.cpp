@@ -228,14 +228,9 @@ uint8_t brightness() {
 
 void enterDeepSleep() {
   Serial.println("[POWER] entering deep sleep");
+  // Deep sleep powers the radios down by itself. Tearing NimBLE/Wi-Fi down by
+  // hand first was what panicked (reset 4), so it is deliberately not done.
   gState.bleActive = false;
-  if (gState.bleConnected) {
-    NimBLEDevice::getServer()->disconnect(0);
-    gState.bleConnected = false;
-  }
-  NimBLEDevice::deinit(true);
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
 
   // The button wakes the chip by going HIGH. If its pin floats while asleep
   // (internal pull-downs are dropped in deep sleep unless held) the chip wakes

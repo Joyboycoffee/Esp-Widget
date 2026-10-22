@@ -155,7 +155,13 @@ fun HomeScreen(
         }
         item {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                DevicePreview(state, modifier = Modifier.fillMaxWidth())
+                DevicePreview(
+                    state,
+                    modifier = Modifier.fillMaxWidth(),
+                    onPageChange = { page ->
+                        if (AppGraph.initialized) AppGraph.engine.setWidgetPage(page)
+                    },
+                )
                 Spacer(Modifier.height(14.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     MiniStat(

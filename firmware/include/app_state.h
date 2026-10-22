@@ -14,6 +14,9 @@ struct RuntimeState {
   espw::LayoutPayload layout{};
   espw::SettingsPayload settings{};
   espw::BatteryPayload battery{};
+  espw::PhoneBatteryPayload phoneBattery{};
+  int8_t pageRequested = -1;  // set by BLE, applied in loop()
+  bool phoneBatteryValid = false;
   espw::WeatherPayload weather{};
   bool weatherValid = false;
   espw::StockPayload stocks[6]{};

@@ -131,7 +131,7 @@ fun EspWidgetApp() {
                 )
                 Tab.LAYOUT -> LayoutScreen(
                     state = state,
-                    onPreviewPage = {},
+                    onPreviewPage = { page -> if (AppGraph.initialized) AppGraph.engine.setWidgetPage(page) },
                 )
                 Tab.STOCKS -> StocksScreen(state = state)
                 Tab.SYNC -> SyncScreen(
