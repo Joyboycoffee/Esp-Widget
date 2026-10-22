@@ -909,6 +909,7 @@ void uiNextPage(int delta) {
   gState.settings.current_page = static_cast<uint8_t>(newPage);
   // Persist lazily: writing NVS on every tap is slow and wears the flash.
   gState.pageSaveAt = millis() + 5000;
+  gState.statusDirty = true;
   renderAll();
   gState.dirty = false;
   gState.lastActivityMs = millis();

@@ -67,109 +67,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- One adaptive dashboard widget (replaces the ten single-card widgets). -->
         <receiver
-            android:name=".widget.ClockWidgetReceiver"
+            android:name=".widget.EspDashboardReceiver"
             android:exported="true"
-            android:label="@string/widget_clock">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.WeatherWidgetReceiver"
-            android:exported="true"
-            android:label="@string/widget_weather">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.BatteryWidgetReceiver"
-            android:exported="true"
-            android:label="@string/widget_battery">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.StocksWidgetReceiver"
-            android:exported="true"
-            android:label="@string/widget_stocks">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.NotificationsWidgetReceiver"
-            android:exported="true"
-            android:label="@string/widget_notifications">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.MediaWidgetReceiver"
-            android:exported="true"
-            android:label="@string/widget_media">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.CalendarWidgetReceiver"
-            android:exported="true"
-            android:label="@string/widget_calendar">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.StepsWidgetReceiver"
-            android:exported="true"
-            android:label="@string/widget_steps">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.TextWidgetReceiver"
-            android:exported="true"
-            android:label="@string/widget_text">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.PhotoWidgetReceiver"
-            android:exported="true"
-            android:label="@string/widget_photo">
+            android:label="@string/widget_dashboard">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

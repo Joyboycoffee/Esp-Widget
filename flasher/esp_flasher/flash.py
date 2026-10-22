@@ -275,9 +275,9 @@ class FlashWorker(threading.Thread):
                 (
                     f"Board connected on {self.port}. Starting automatic flash…"
                     if self.auto
-                    else f"Starting flash on {self.port}…"
+                    else f"Starting flash on {self.port}…",
+                    "info",
                 ),
-                "info",
             )
             chip, mac = flash_port(self.port, self.firmware, self.emit)
             self.finished_at = time.monotonic()

@@ -2,8 +2,7 @@ package dev.gourav.espwidget
 
 import android.content.Context
 import androidx.glance.appwidget.updateAll
-import dev.gourav.espwidget.widget.EspWidgetGlance
-import dev.gourav.espwidget.widget.WidgetKind
+import dev.gourav.espwidget.widget.EspDashboardWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,8 +22,8 @@ object WidgetUpdater {
                 val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
                 scope.launch {
                     for (ignored in requests) {
-                        runCatching { WidgetKind.entries.forEach { EspWidgetGlance(it).updateAll(app) } }
-                        delay(8_000)
+                        runCatching { EspDashboardWidget().updateAll(app) }
+                        delay(5_000)
                     }
                 }
             }

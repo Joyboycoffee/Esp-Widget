@@ -2,15 +2,6 @@
 <resources>
     <string name="app_name">ESP Widget</string>
     <string name="notification_access_label">ESP Widget notifications</string>
-    <string name="widget_clock">ESP Clock</string>
-    <string name="widget_weather">ESP Weather</string>
-    <string name="widget_battery">ESP Battery</string>
-    <string name="widget_stocks">ESP Markets</string>
-    <string name="widget_notifications">ESP Alerts</string>
-    <string name="widget_media">ESP Now Playing</string>
-    <string name="widget_calendar">ESP Calendar</string>
-    <string name="widget_steps">ESP Steps</string>
-    <string name="widget_text">ESP Note</string>
-    <string name="widget_photo">ESP Photo</string>
-    <string name="widget_description">A pastel widget that mirrors what is on your ESP desk display.</string>
+    <string name="widget_dashboard">ESP Widget</string>
+    <string name="widget_description">Clock, weather, events, music, steps and stocks in one widget. Resize it to see more.</string>
 </resources>

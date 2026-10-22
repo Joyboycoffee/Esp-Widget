@@ -55,7 +55,7 @@ import androidx.core.content.ContextCompat
 import dev.gourav.espwidget.AppGraph
 import dev.gourav.espwidget.data.AppState
 import dev.gourav.espwidget.data.SourceConfig
-import dev.gourav.espwidget.widget.ClockWidgetReceiver
+import dev.gourav.espwidget.widget.EspDashboardReceiver
 
 @Composable
 fun SettingsScreen(state: AppState, onRequestPermissions: () -> Unit) {
@@ -181,7 +181,7 @@ fun SettingsScreen(state: AppState, onRequestPermissions: () -> Unit) {
                 ToggleRow("Seconds", "Animate the seconds bar on the clock", settings.showSeconds) {
                     AppGraph.repository.setSettings(settings.copy(showSeconds = it))
                 }
-                ToggleRow("WiFi while docked", "Let the widget fetch weather itself", settings.wifiEnabled) {
+                ToggleRow("Wi-Fi while charging", "Network is set up on the Sync tab", settings.wifiEnabled) {
                     AppGraph.repository.setSettings(settings.copy(wifiEnabled = it))
                 }
             }
@@ -359,9 +359,9 @@ fun SettingsScreen(state: AppState, onRequestPermissions: () -> Unit) {
             }
         }
         item {
-            SectionCard(title = "Home screen", subtitle = "Ten matching pastel widgets") {
+            SectionCard(title = "Home screen widget", subtitle = "Everything in one widget") {
                 Text(
-                    "Long-press your home screen → Widgets → ESP Widget to pin any of the ten card types.",
+                    "Clock, weather, events, music, steps and stocks in one card. Make it bigger to see more: 2×2 shows the basics, 4×2 adds events and a stock, 4×4 shows everything.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Muted,
                 )
@@ -371,7 +371,7 @@ fun SettingsScreen(state: AppState, onRequestPermissions: () -> Unit) {
                         val manager = AppWidgetManager.getInstance(context)
                         if (manager.isRequestPinAppWidgetSupported) {
                             manager.requestPinAppWidget(
-                                ComponentName(context, ClockWidgetReceiver::class.java),
+                                ComponentName(context, EspDashboardReceiver::class.java),
                                 null,
                                 null,
                             )
@@ -382,13 +382,13 @@ fun SettingsScreen(state: AppState, onRequestPermissions: () -> Unit) {
                     shape = RoundedCornerShape(50),
                     colors = ButtonDefaults.buttonColors(containerColor = Ink, contentColor = CardWhite),
                 ) {
-                    Text("Pin clock widget")
+                    Text("Add to home screen")
                 }
             }
         }
         item {
             Column(modifier = Modifier.padding(bottom = 18.dp)) {
-                Text("ESP Widget 1.0", style = MaterialTheme.typography.labelSmall)
+                Text("ESP Widget 1.1", style = MaterialTheme.typography.labelSmall)
                 Text(
                     "Protocol v1 · 240 × 240 · ESP32-C3",
                     style = MaterialTheme.typography.bodyMedium,

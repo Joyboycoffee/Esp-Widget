@@ -50,7 +50,13 @@ class WidgetRepository(private val context: Context, private val scope: Coroutin
     }
 
     fun updateLink(transform: (LinkState) -> LinkState) {
-        _link.value = transform(_link.value)
+        val before = _link.value
+        val after = transform(before)
+        _link.value = after
+        // The home-screen widget shows link + ESP battery; refresh it when those change.
+        if (before.connected != after.connected || before.status?.battery != after.status?.battery) {
+            WidgetUpdater.refresh(context)
+        }
     }
 
     fun log(message: String) {

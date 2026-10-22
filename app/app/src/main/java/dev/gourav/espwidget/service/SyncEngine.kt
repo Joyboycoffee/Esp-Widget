@@ -180,7 +180,16 @@ class SyncEngine(
                     Msg.STATUS -> StatusPayload.decode(frame.payload)?.let {
                         repo.updateLink { link -> link.copy(status = DeviceStatusMapper.from(it)) }
                     }
-                    Msg.WIFI_SCAN_RESULT -> Unit
+                    // Handled per frame (not via the StateFlow) so a re-scan that
+                    // finds the same networks still refreshes the list.
+                    Msg.WIFI_SCAN_RESULT -> dev.gourav.espwidget.protocol.WifiScanResult.decode(frame.payload)?.let { result ->
+                        val networks = result.aps
+                            .filter { it.ssid.isNotBlank() }
+                            .sortedByDescending { it.rssi }
+                            .distinctBy { it.ssid }
+                            .map { dev.gourav.espwidget.data.WifiNetwork(it.ssid, it.rssi, it.secure) }
+                        repo.updateLink { link -> link.copy(wifiScan = networks) }
+                    }
                     Msg.TIME_REQ -> sendTime()
                     Msg.PING -> ble.send(Msg.PONG, frame.payload)
                     Msg.ACK -> Unit
@@ -189,11 +198,6 @@ class SyncEngine(
             }
         }
 
-        scope.launch {
-            ble.wifiNetworks.collect { networks ->
-                repo.updateLink { link -> link.copy(wifiScan = networks.map { dev.gourav.espwidget.data.WifiNetwork(it.ssid, it.rssi, it.secure) }) }
-            }
-        }
 
         scope.launch { ticker() }
 
@@ -463,18 +467,37 @@ class SyncEngine(
     }
 
     fun requestWifiScan() {
+        repo.updateLink { it.copy(wifiScan = emptyList()) }
         ble.send(Msg.WIFI_SCAN)
-        repo.log("Asked widget to scan WiFi")
+        repo.log("Asked widget to scan Wi-Fi")
     }
 
     fun sendWifiCredentials(ssid: String, password: String) {
-        ble.send(Msg.WIFI_SET, WifiSetPayload(ssid, password, connect = true).encode())
-        repo.log("WiFi credentials sent for $ssid")
+        if (!ble.send(Msg.WIFI_SET, WifiSetPayload(ssid, password, connect = true).encode())) {
+            repo.setError("Connect to the widget over Bluetooth first")
+            return
+        }
+        // Remember the name for the UI and make sure the widget's Wi-Fi switch is on.
+        repo.update {
+            it.copy(
+                sources = it.sources.copy(wifiSsid = ssid),
+                settings = it.settings.copy(wifiEnabled = true),
+            )
+        }
+        repo.log("Wi-Fi details sent for $ssid")
+        // The widget pushes its Wi-Fi state as it changes; ask once more after
+        // the join window in case a push was missed.
+        scope.launch {
+            delay(25_000)
+            ble.send(Msg.STATUS_REQ)
+        }
     }
 
     fun forgetWifi() {
         ble.send(Msg.WIFI_FORGET)
-        repo.log("WiFi credentials cleared")
+        repo.update { it.copy(sources = it.sources.copy(wifiSsid = "")) }
+        repo.log("Wi-Fi network forgotten")
+        ble.send(Msg.STATUS_REQ)
     }
 
     fun factoryReset() {

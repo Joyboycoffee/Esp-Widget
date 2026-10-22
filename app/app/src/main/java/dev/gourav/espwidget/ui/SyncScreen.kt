@@ -56,8 +56,6 @@ import java.util.Locale
 @Composable
 fun SyncScreen(state: AppState, requestPermissions: () -> Unit) {
     val context = LocalContext.current
-    var password by remember { mutableStateOf("") }
-    var selectedSsid by remember { mutableStateOf("") }
     var noteDraft by remember(state.persisted.notes) { mutableStateOf(state.persisted.notes) }
     var confirmReset by remember { mutableStateOf(false) }
     val enableBluetooth = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
@@ -72,7 +70,7 @@ fun SyncScreen(state: AppState, requestPermissions: () -> Unit) {
         item {
             Column {
                 Text("Sync", style = MaterialTheme.typography.headlineMedium)
-                Text("Bluetooth is the always-on link. WiFi only wakes while docked.", style = MaterialTheme.typography.bodyMedium, color = Muted)
+                Text("Bluetooth keeps the widget in sync. Wi-Fi is optional, for weather while charging.", style = MaterialTheme.typography.bodyMedium, color = Muted)
             }
         }
         item {
@@ -166,6 +164,7 @@ fun SyncScreen(state: AppState, requestPermissions: () -> Unit) {
                 }
             }
         }
+        item { WifiCard(state) }
         item {
             SectionCard(title = "Widget status", subtitle = "Reported by the ESP32-C3 over BLE") {
                 val status = state.link.status
@@ -193,86 +192,6 @@ fun SyncScreen(state: AppState, requestPermissions: () -> Unit) {
                     TextButton(onClick = { AppGraph.ble.send(dev.gourav.espwidget.protocol.Msg.STATUS_REQ) }) {
                         Text("Refresh diagnostics", color = Ink)
                     }
-                }
-            }
-        }
-        item {
-            SectionCard(title = "Docked WiFi", subtitle = "Send credentials once; the widget joins when charging") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { AppGraph.engine.requestWifiScan() },
-                        enabled = state.link.connected,
-                        shape = RoundedCornerShape(50),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Line),
-                    ) {
-                        Icon(Icons.Rounded.Wifi, null, tint = Ink, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Scan networks", color = Ink)
-                    }
-                    if (state.link.wifiScan.isNotEmpty()) {
-                        Text(
-                            "${state.link.wifiScan.size} found",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Muted,
-                            modifier = Modifier.align(Alignment.CenterVertically),
-                        )
-                    }
-                }
-                if (state.link.wifiScan.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    state.link.wifiScan.take(8).forEach { network ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedSsid = network.ssid }
-                                .padding(vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(Icons.Rounded.Wifi, null, tint = if (selectedSsid == network.ssid) Ink else Muted, modifier = Modifier.size(15.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                network.ssid.ifBlank { "(hidden)" },
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = Ink,
-                                modifier = Modifier.weight(1f),
-                            )
-                            if (network.secure) Icon(Icons.Rounded.Lock, null, tint = Muted, modifier = Modifier.size(12.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("${network.rssi} dBm", fontSize = 10.sp, color = Muted)
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = selectedSsid,
-                    onValueChange = { selectedSsid = it.take(31) },
-                    label = { Text("Network name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it.take(63) },
-                    label = { Text("Password") },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                )
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            AppGraph.engine.sendWifiCredentials(selectedSsid, password)
-                            password = ""
-                        },
-                        enabled = selectedSsid.isNotBlank() && state.link.connected,
-                        shape = RoundedCornerShape(50),
-                        colors = ButtonDefaults.buttonColors(containerColor = Ink, contentColor = CardWhite),
-                    ) { Text("Send to widget") }
-                    TextButton(onClick = { AppGraph.engine.forgetWifi() }) { Text("Forget", color = Muted) }
                 }
             }
         }

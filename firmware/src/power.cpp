@@ -165,7 +165,10 @@ void update() {
   gState.battery.charging = charging ? 1 : 0;
   gState.battery.usb = usb ? 1 : 0;
   gState.battery.updated = espclock::epochUtc();
-  if (changed) gState.dirty = true;
+  if (changed) {
+    gState.dirty = true;
+    gState.statusDirty = true;
+  }
 
   // Low-battery dimming with hysteresis: dim below 5 %, only undim above 10 %
   // (or when docked). Readings without a valid voltage never trigger it.

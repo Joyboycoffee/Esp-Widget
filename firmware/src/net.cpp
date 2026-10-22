@@ -29,6 +29,7 @@ void publishState(uint8_t state) {
   if (gState.wifiState != state) {
     gState.wifiState = state;
     gState.dirty = true;
+    gState.statusDirty = true;  // let the app show Connecting / Connected / Failed live
   }
 }
 
@@ -137,6 +138,16 @@ void setCredentials(const char* ssid, const char* password, bool connectNow) {
   strlcpy(gState.wifiPassword, password ? password : "", sizeof(gState.wifiPassword));
   gState.wifiConfigured = gState.wifiSsid[0] != 0;
   stateSaveWifi();
+  if (connectNow && gState.wifiConfigured) {
+    // Sending a network from the app is an explicit "use Wi-Fi": turn the
+    // setting on and drop any previous attempt so the new one starts clean.
+    if ((gState.settings.flags & 0x04) == 0) {
+      gState.settings.flags |= 0x04;
+      stateSaveSettings();
+    }
+    WiFi.disconnect(false, true);
+    publishState(0);
+  }
   s_wantConnect = connectNow && gState.wifiConfigured;
   s_connectStarted = millis();
   s_manualWindowUntil = millis() + 120000;
@@ -213,6 +224,16 @@ bool connected() { return WiFi.status() == WL_CONNECTED; }
 
 void loop() {
   const uint32_t now = millis();
+  static uint32_t s_lastRetry = 0;
+  // Docked with a saved network but not connected (e.g. router was down or a
+  // previous attempt failed): try again every minute.
+  if (gState.usbPower && gState.wifiConfigured && wifiSettingOn() && !s_wantConnect &&
+      WiFi.status() != WL_CONNECTED && now - s_lastRetry > 60000) {
+    s_lastRetry = now;
+    s_wantConnect = true;
+    s_connectStarted = now;
+    if (gState.wifiState == 3) publishState(0);
+  }
   const bool manual = now < s_manualWindowUntil;
   const bool allowed = (gState.usbPower || manual) && (wifiSettingOn() || manual);
 
@@ -257,9 +278,11 @@ void loop() {
         publishState(1);
         s_connectStarted = now;
       }
-      if (now - s_connectStarted > 15000) {
+      if (now - s_connectStarted > 20000) {
         publishState(3);
         s_wantConnect = false;
+        WiFi.disconnect(false, false);  // stop the driver retrying in the background
+        if (!gState.usbPower) WiFi.mode(WIFI_OFF);
       }
     } else {
       if (gState.wifiState != 2) {
@@ -272,6 +295,13 @@ void loop() {
       gState.wifiRssi = static_cast<int8_t>(WiFi.RSSI());
     }
   } else if (WiFi.status() == WL_CONNECTED) {
+    // Joined after our 15 s window, or kept the link from a manual session.
+    if (gState.wifiState != 2) {
+      publishState(2);
+      strlcpy(gState.ip, WiFi.localIP().toString().c_str(), sizeof(gState.ip));
+      syncNtp();
+      s_weatherRequested = true;
+    }
     gState.wifiRssi = static_cast<int8_t>(WiFi.RSSI());
   }
 

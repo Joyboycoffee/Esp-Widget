@@ -66,6 +66,8 @@ data class SourceConfig(
     val notificationsEnabled: Boolean = true,
     val mediaEnabled: Boolean = true,
     val calendarEnabled: Boolean = true,
+    /** Last Wi-Fi network sent to the widget (name only; the password is never stored). */
+    val wifiSsid: String = "",
 )
 
 @Serializable

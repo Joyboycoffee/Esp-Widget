@@ -216,6 +216,12 @@ void loop() {
     // timeout: low power but tolerant of the phone going briefly quiet.
     s_server->updateConnParams(s_connHandle, 24, 40, 4, 600);
   }
+  static uint32_t s_lastStatusPush = 0;
+  if (gState.statusDirty && s_connected && !s_pendingHello && millis() - s_lastStatusPush > 500) {
+    gState.statusDirty = false;
+    s_lastStatusPush = millis();
+    espsync::sendStatus();
+  }
   if (s_pendingHello && s_connected) {
     s_pendingHello = false;
     espsync::sendHello();
