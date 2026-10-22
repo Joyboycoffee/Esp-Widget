@@ -173,7 +173,7 @@ fun DevicePreview(
 
 @Composable
 private fun PreviewHeader(state: AppState, page: Int, pages: Int) {
-    val names = listOf("TODAY", "MARKETS", "FOCUS", "FRAME", "CUSTOM")
+    val today = java.text.SimpleDateFormat("EEE, d MMM", java.util.Locale.getDefault()).format(java.util.Date())
     val status = state.link.status
     val battery = status?.battery ?: 0
     val levelColor = when {
@@ -194,13 +194,12 @@ private fun PreviewHeader(state: AppState, page: Int, pages: Int) {
         Spacer(Modifier.height(3.dp))
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text(
-                names.getOrElse(page) { "CUSTOM" },
+                today,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = Ink,
+                modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.width(6.dp))
-            Text("${page + 1}/$pages", fontSize = 8.sp, color = Muted, modifier = Modifier.weight(1f))
             Icon(Icons.Rounded.Bluetooth, null, tint = if (state.link.connected) Ink else Line, modifier = Modifier.size(11.dp))
             Spacer(Modifier.width(3.dp))
             Icon(Icons.Rounded.Wifi, null, tint = if (status?.wifiState == 2) Ink else Line, modifier = Modifier.size(10.dp))
@@ -366,6 +365,25 @@ private fun MiniWidgetContent(type: Int, option: Int, accent: Int, hero: Boolean
             }
         }
         3 -> {
+            if (option >= 6) {
+                val list = p.stocks.filter { it.valid }.take(if (hero) 4 else 3)
+                if (list.isEmpty()) {
+                    MiniEmpty("Add a watchlist", hero)
+                    return
+                }
+                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    list.forEach { stock ->
+                        val trend = if (stock.changeBp >= 0) Good else Bad
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Text(stock.symbol, fontSize = if (hero) 9.sp else 7.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f), maxLines = 1)
+                            if (hero) Text(money(stock.priceCents, stock.currency), fontSize = 7.sp, color = Muted)
+                            Spacer(Modifier.width(6.dp))
+                            Text("${"%+.1f".format(stock.changeBp / 100.0)}%", fontSize = 7.sp, color = trend)
+                        }
+                    }
+                }
+                return
+            }
             val stock = p.stocks.getOrNull(option % 6)
             if (stock == null || !stock.valid) {
                 MiniEmpty("Add a watchlist", hero)

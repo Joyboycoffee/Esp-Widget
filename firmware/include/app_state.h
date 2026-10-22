@@ -50,6 +50,7 @@ struct RuntimeState {
   char toast[48]{};
   uint32_t toastUntil = 0;
   uint8_t touchCount = 0;
+  uint32_t pageSaveAt = 0;  // millis() at which to persist current_page (0 = nothing pending)
 };
 
 extern RuntimeState gState;

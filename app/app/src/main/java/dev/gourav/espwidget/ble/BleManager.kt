@@ -35,10 +35,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.util.UUID
-import java.util.concurrent.ConcurrentLinkedQueue
 
 class BleManager(
     private val context: Context,
@@ -73,10 +70,18 @@ class BleManager(
     private var sequence = 0
     private var frameId = 0
     private val assembler = FragmentAssembler()
-    private val writeLock = Mutex()
-    private val outbox = ConcurrentLinkedQueue<ByteArray>()
+    private val outboxLock = Any()
+    private val outbox = ArrayDeque<ByteArray>()
+    private var inFlight: ByteArray? = null
+    private var inFlightRetries = 0
     @Volatile private var writing = false
     @Volatile private var negotiated = false
+
+    // Reconnect bookkeeping: the user tapping "disconnect" is the only thing
+    // that stops us from coming back automatically.
+    @Volatile private var userDisconnected = false
+    private var reconnectAttempts = 0
+    private var reconnectJob: kotlinx.coroutines.Job? = null
 
     val isBluetoothReady: Boolean
         get() = adapter?.isEnabled == true
@@ -149,8 +154,12 @@ class BleManager(
             return
         }
         stopScan()
-        if (gatt != null && currentAddress == address && _connection.value.connected) return
-        disconnect()
+        if (gatt != null && currentAddress == address &&
+            (_connection.value.connected || _connection.value.connecting)
+        ) return
+        closeGatt()
+        userDisconnected = false
+        reconnectJob?.cancel()
         currentAddress = address
         deviceName.value = label
         negotiated = false
@@ -168,17 +177,67 @@ class BleManager(
         connect(device.address, device.name ?: "ESP-Widget")
     }
 
-    @SuppressLint("MissingPermission")
+    /** User-initiated disconnect: stays disconnected until connect() is called again. */
     fun disconnect() {
+        userDisconnected = true
+        reconnectJob?.cancel()
+        closeGatt()
+        _connection.value = _connection.value.copy(connected = false, connecting = false, scanning = false)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun closeGatt() {
         negotiated = false
         rx = null
         tx = null
-        outbox.clear()
-        writing = false
-        runCatching { gatt?.disconnect() }
-        runCatching { gatt?.close() }
+        clearOutbox()
+        val old = gatt
         gatt = null
-        _connection.value = _connection.value.copy(connected = false, connecting = false, scanning = false)
+        // Always close(): a BluetoothGatt that is only disconnect()ed keeps a
+        // client slot. Android has very few, and once they run out every
+        // connect fails with status 133 until Bluetooth is toggled.
+        runCatching { old?.disconnect() }
+        runCatching { old?.close() }
+    }
+
+    private fun clearOutbox() {
+        synchronized(outboxLock) {
+            outbox.clear()
+            inFlight = null
+            inFlightRetries = 0
+            writing = false
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun scheduleReconnect() {
+        val address = currentAddress ?: return
+        if (userDisconnected || !hasPermissions() || adapter?.isEnabled != true) return
+        reconnectJob?.cancel()
+        val wait = (1_500L shl reconnectAttempts.coerceAtMost(4)).coerceAtMost(30_000L)
+        reconnectAttempts++
+        reconnectJob = appScope.launch {
+            delay(wait)
+            if (userDisconnected || _connection.value.connected) return@launch
+            closeGatt()
+            _connection.value = _connection.value.copy(connecting = true)
+            // autoConnect = true lets Android wait for the widget to come back
+            // into range (or wake from sleep) without us polling.
+            gatt = adapter?.getRemoteDevice(address)
+                ?.connectGatt(context, reconnectAttempts > 2, callback, BluetoothDevice.TRANSPORT_LE)
+        }
+    }
+
+    /**
+     * Called periodically: if we should be connected but nothing is in
+     * progress (e.g. Bluetooth was switched off and on), start reconnecting.
+     */
+    fun reconnectIfIdle() {
+        if (userDisconnected || currentAddress == null) return
+        val state = _connection.value
+        if (state.connected || state.connecting || state.scanning) return
+        if (reconnectJob?.isActive == true) return
+        scheduleReconnect()
     }
 
     /** Largest payload that still fits the 32-fragment transport at the current MTU. */
@@ -195,33 +254,49 @@ class BleManager(
         val chunkPayload = (writeMtu - 3 - Wire.FRAG_HEADER).coerceIn(8, 239)
         val chunks = Wire.fragment(frame, chunkPayload, ++frameId and 0xFF)
         if (chunks.isEmpty()) return false
-        outbox.addAll(chunks)
+        synchronized(outboxLock) { outbox.addAll(chunks) }
         pump(target)
         return true
     }
 
+    /**
+     * Sends the next chunk. Exactly one write is in flight at a time; a chunk
+     * is only dropped from the queue once the stack confirms it, so a busy
+     * stack or a write that fails while bonding is retried instead of
+     * silently corrupting the frame it belongs to.
+     */
     @SuppressLint("MissingPermission")
     private fun pump(target: BluetoothGatt) {
-        if (writing) return
         val characteristic = rx ?: return
-        val chunk = outbox.poll() ?: return
-        writing = true
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val res = target.writeCharacteristic(characteristic, chunk, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
-            if (res != android.bluetooth.BluetoothStatusCodes.SUCCESS) {
-                writing = false
-                lastError.value = "BLE write rejected ($res)"
-            }
+        val chunk = synchronized(outboxLock) {
+            if (writing) return
+            val next = inFlight ?: outbox.removeFirstOrNull() ?: return
+            inFlight = next
+            writing = true
+            next
+        }
+        val accepted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            target.writeCharacteristic(characteristic, chunk, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) ==
+                android.bluetooth.BluetoothStatusCodes.SUCCESS
         } else {
             @Suppress("DEPRECATION")
             characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
             @Suppress("DEPRECATION")
             characteristic.value = chunk
             @Suppress("DEPRECATION")
-            if (!target.writeCharacteristic(characteristic)) {
-                writing = false
-                lastError.value = "BLE write rejected"
-            }
+            target.writeCharacteristic(characteristic)
+        }
+        if (!accepted) {
+            // Stack busy (e.g. mid-bonding). Keep the chunk and try again shortly.
+            synchronized(outboxLock) { writing = false }
+            retryLater(target, 120)
+        }
+    }
+
+    private fun retryLater(target: BluetoothGatt, delayMs: Long) {
+        appScope.launch {
+            delay(delayMs)
+            if (gatt === target) pump(target)
         }
     }
 
@@ -257,12 +332,24 @@ class BleManager(
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
                 this@BleManager.gatt = gatt
+                reconnectAttempts = 0
                 _connection.value = _connection.value.copy(connecting = true, error = null)
+                gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_BALANCED)
                 gatt.discoverServices()
-            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                rx = null; tx = null; negotiated = false; writing = false; outbox.clear()
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS) {
+                if (this@BleManager.gatt !== gatt) {
+                    // A stale handle from an earlier attempt; just release it.
+                    runCatching { gatt.close() }
+                    return
+                }
+                closeGatt()
                 _connection.value = _connection.value.copy(connected = false, connecting = false)
-                lastError.value = if (status != BluetoothGatt.GATT_SUCCESS) "Disconnected ($status)" else null
+                lastError.value = if (status != BluetoothGatt.GATT_SUCCESS && !userDisconnected) {
+                    "Widget out of reach, reconnecting..."
+                } else {
+                    null
+                }
+                scheduleReconnect()
             }
         }
 
@@ -306,11 +393,28 @@ class BleManager(
             characteristic: BluetoothGattCharacteristic,
             status: Int,
         ) {
-            writing = false
-            if (status != BluetoothGatt.GATT_SUCCESS) {
-                lastError.value = "Chunk write failed ($status)"
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                synchronized(outboxLock) {
+                    inFlight = null
+                    inFlightRetries = 0
+                    writing = false
+                }
+                pump(gatt)
+                return
             }
-            pump(gatt)
+            // Usually "insufficient authentication/encryption" while Android
+            // runs the pairing dialog. Retry the same chunk once bonding is done.
+            val giveUp = synchronized(outboxLock) {
+                writing = false
+                inFlightRetries++
+                inFlightRetries > 8
+            }
+            if (giveUp) {
+                lastError.value = "Widget did not accept data ($status). Try re-pairing."
+                clearOutbox()
+            } else {
+                retryLater(gatt, 700)
+            }
         }
 
         @Deprecated("Deprecated in Java")

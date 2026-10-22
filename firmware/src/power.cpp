@@ -68,6 +68,16 @@ void configureChargerPins() {
 }
 }  // namespace
 
+// Only touches the backlight when the value actually changes, and never while
+// the screen is intentionally dark (sleep / long-press off): the next fade-in
+// picks up brightness() anyway.
+void applyBrightness() {
+  if (tft.getBrightness() == 0) return;
+  const uint8_t target = brightness();
+  if (target == tft.getBrightness()) return;
+  tft.setBrightness(target);
+}
+
 void begin() {
   analogSetPinAttenuation(PIN_BAT_ADC, ADC_11db);
   pinMode(PIN_BAT_ADC, INPUT);
@@ -106,7 +116,9 @@ void update() {
     s_debouncedUsb = rawUsb;
     s_usbInitialized = true;
   } else if (rawUsb != s_debouncedUsb) {
-    if (++s_usbDebounceCount >= 2) {
+    // Three agreeing samples (~6 s) before we believe a dock/undock. A single
+    // noisy ADC/charger-LED reading used to toggle Wi-Fi and brightness.
+    if (++s_usbDebounceCount >= 3) {
       s_debouncedUsb = rawUsb;
       s_usbDebounceCount = 0;
     }
@@ -155,25 +167,26 @@ void update() {
   gState.battery.updated = espclock::epochUtc();
   if (changed) gState.dirty = true;
 
-  if (!usb && percent <= 5) {
-    if (!s_lowBattery) {
-      s_lowBattery = true;
-      s_brightness = s_brightness < 60 ? s_brightness : 60;
-      tft.setBrightness(s_brightness);
-    }
-  } else if (s_lowBattery) {
-    s_lowBattery = false;
-    s_brightness = gState.settings.brightness;
-    tft.setBrightness(s_brightness);
+  // Low-battery dimming with hysteresis: dim below 5 %, only undim above 10 %
+  // (or when docked). Readings without a valid voltage never trigger it.
+  bool low = s_lowBattery;
+  if (usb) low = false;
+  else if (voltageValid && percent <= 5) low = true;
+  else if (voltageValid && percent >= 10) low = false;
+  if (low != s_lowBattery) {
+    s_lowBattery = low;
+    applyBrightness();
   }
 }
 
 void setBrightness(uint8_t value) {
   s_brightness = value;
-  tft.setBrightness(value);
+  applyBrightness();
 }
 
-uint8_t brightness() { return s_brightness; }
+uint8_t brightness() {
+  return s_lowBattery && s_brightness > 60 ? 60 : s_brightness;
+}
 
 void enterDeepSleep() {
   Serial.println("[POWER] entering deep sleep");

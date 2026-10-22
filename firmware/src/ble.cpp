@@ -26,6 +26,11 @@ bool s_advertising = false;
 bool s_connected = false;
 uint32_t s_advertiseUntil = 0;
 uint32_t s_passkey = 0;
+// NimBLE callbacks run on the BLE host task. Sending from there raced with
+// sends from loop() (shared sequence/fragment counters) and corrupted frames,
+// so callbacks only raise these flags and loop() does the actual work.
+volatile bool s_pendingHello = false;
+volatile bool s_pendingConnParams = false;
 
 void rebuildName() {
   String mac = NimBLEDevice::getAddress().toString().c_str();
@@ -46,7 +51,10 @@ class ServerCallbacks : public NimBLEServerCallbacks {
     s_connected = true;
     gState.bleConnected = true;
     gState.lastActivityMs = millis();
+    gState.dirty = true;
+    s_advertising = false;
     s_advertiseUntil = 0;
+    s_pendingConnParams = true;
     Serial.printf("[BLE] connected, handle=%u\n", s_connHandle);
   }
 
@@ -77,11 +85,10 @@ class ServerCallbacks : public NimBLEServerCallbacks {
       Serial.println("[BLE] authentication: link not encrypted yet");
       return;
     }
+    if (gState.pairingActive) stateSetToast("Phone paired");
     gState.pairingActive = false;
     gState.dirty = true;
-    stateSetToast("Bluetooth paired");
-    espsync::sendHello();
-    espsync::sendStatus();
+    s_pendingHello = true;
     Serial.println("[BLE] link encrypted and authenticated");
   }
 } s_serverCallbacks;
@@ -105,10 +112,7 @@ class TxCallbacks : public NimBLECharacteristicCallbacks {
                    uint16_t subValue) override {
     (void)characteristic;
     (void)info;
-    if (subValue & 0x0001) {
-      espsync::sendHello();
-      espsync::sendStatus();
-    }
+    if (subValue & 0x0001) s_pendingHello = true;
   }
 } s_txCallbacks;
 
@@ -141,14 +145,14 @@ void begin() {
       NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_ENC | NIMBLE_PROPERTY::NOTIFY,
       512);
   s_tx->setCallbacks(&s_txCallbacks);
-  service->start();
 
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->enableScanResponse(true);
   adv->setName(s_name);
   adv->addServiceUUID(ESPW_SERVICE_UUID);
-  adv->setMinInterval(160);
-  adv->setMaxInterval(320);
+  // 250-400 ms: still connects within a second, much cheaper than 100 ms.
+  adv->setMinInterval(400);
+  adv->setMaxInterval(640);
   gState.bleActive = true;
   startAdvertising(0);
   Serial.printf("[BLE] advertising as %s\n", s_name);
@@ -206,6 +210,17 @@ void send(uint8_t type, const void* payload, uint16_t len) {
 }
 
 void loop() {
+  if (s_pendingConnParams && s_connected && s_server) {
+    s_pendingConnParams = false;
+    // 30-50 ms interval, skip up to 4 events when idle, 6 s supervision
+    // timeout: low power but tolerant of the phone going briefly quiet.
+    s_server->updateConnParams(s_connHandle, 24, 40, 4, 600);
+  }
+  if (s_pendingHello && s_connected) {
+    s_pendingHello = false;
+    espsync::sendHello();
+    espsync::sendStatus();
+  }
   if (s_advertising && s_advertiseUntil && millis() > s_advertiseUntil && !s_connected) {
     stopAdvertising();
     Serial.println("[BLE] advertising window elapsed");

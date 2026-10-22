@@ -23,12 +23,13 @@ constexpr uint16_t C_GOOD = rgb565(112, 164, 124);
 constexpr uint16_t C_SUN = rgb565(230, 178, 92);
 constexpr uint16_t C_RAIN = rgb565(126, 164, 203);
 
-constexpr int UI_MARGIN = 9;
-constexpr int UI_HEADER_H = 20;
-constexpr int UI_GAP = 7;
-constexpr int UI_HERO_H = 104;
-constexpr int UI_SMALL_H = 92;
-constexpr int UI_CONTENT_Y = 22;
+// 240x240 layout: 10px side margins, 8px gutters, 24px status bar on top and
+// a 10px bottom margin that also holds the page dots.
+constexpr int UI_MARGIN = 10;
+constexpr int UI_GAP = 8;
+constexpr int UI_CONTENT_Y = 26;
+constexpr int UI_BOTTOM = 12;
+constexpr int UI_HERO_H = 100;
 
 inline uint16_t mixColor(uint16_t a, uint16_t b, uint8_t amountOfA) {
   const int r = (((a >> 11) & 0x1F) * amountOfA + ((b >> 11) & 0x1F) * (100 - amountOfA)) / 100;

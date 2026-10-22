@@ -66,7 +66,10 @@ class SyncEngine(
     private var stepBase = 0f
     private var stepDay = ""
     private var stepsRegistered = false
+    /** What the widget currently has, as far as we know. Null = unknown, send everything. */
     private var lastSentSnapshot: PersistedState? = null
+    private var lastFullSync = 0L
+    private var lastBrightnessPreview = 0L
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -100,14 +103,14 @@ class SyncEngine(
         repo.update { it.copy(steps = it.steps.copy(goal = it.sources.stepsGoal.toLong())) }
 
         scope.launch {
-            repo.persisted.debounce(450).collectLatest { state ->
+            // Only push what changed. Previously every tiny update (music
+            // progress, phone battery, a log line) re-sent the whole layout +
+            // settings, which made the widget jump back to page 1, re-apply
+            // brightness and rewrite its flash every few seconds.
+            repo.persisted.debounce(300).collectLatest { state ->
                 if (ble.connection.value.connected) {
-                    // lastSync is written by sendSnapshot itself; ignore that field
-                    // when deciding whether the snapshot content actually changed.
-                    val comparable = state.copy(lastSync = 0)
-                    if (comparable != lastSentSnapshot) {
-                        sendSnapshot(state)
-                    }
+                    val previous = lastSentSnapshot
+                    if (previous == null) sendSnapshot(state) else sendChanges(previous, state)
                 }
             }
         }
@@ -119,19 +122,32 @@ class SyncEngine(
         }
 
         scope.launch {
-            ble.connection.collectLatest { link ->
+            var linkUp = false
+            var postConnect: kotlinx.coroutines.Job? = null
+            ble.connection.collect { link ->
                 if (link.connected) {
+                    if (linkUp) return@collect  // name/firmware refresh, not a new connection
+                    linkUp = true
                     repo.updateLink { it.copy(connected = true, connecting = false, scanning = false, error = null) }
                     link.address?.let { address -> prefs.edit().putString("last_address", address).apply() }
-                    delay(350)
                     lastSentSnapshot = null
-                    sendSnapshot(repo.persisted.value)
-                    ble.send(Msg.STATUS_REQ)
-                    refreshWeather(force = false)
-                    refreshCalendar()
-                    refreshMedia()
-                    refreshStocks(force = false)
+                    postConnect?.cancel()
+                    postConnect = scope.launch {
+                        // The widget says Hello once our notification subscription
+                        // is live and the full sync happens there. This is only a
+                        // fallback in case that Hello is lost.
+                        delay(2_500)
+                        if (System.currentTimeMillis() - lastFullSync > 5_000) sendSnapshot(repo.persisted.value)
+                        ble.send(Msg.STATUS_REQ)
+                        refreshWeather(force = false)
+                        refreshCalendar()
+                        refreshMedia()
+                        refreshStocks(force = false)
+                    }
                 } else {
+                    linkUp = false
+                    postConnect?.cancel()
+                    lastSentSnapshot = null
                     repo.updateLink {
                         it.copy(
                             connected = false,
@@ -157,8 +173,9 @@ class SyncEngine(
                         // Hello only arrives after the TX subscription is live, so
                         // RX is guaranteed to be writable now. Re-send the full
                         // snapshot instead of racing service discovery.
-                        lastSentSnapshot = null
-                        sendSnapshot(repo.persisted.value)
+                        if (System.currentTimeMillis() - lastFullSync > 3_000) {
+                            sendSnapshot(repo.persisted.value)
+                        }
                     }
                     Msg.STATUS -> StatusPayload.decode(frame.payload)?.let {
                         repo.updateLink { link -> link.copy(status = DeviceStatusMapper.from(it)) }
@@ -234,12 +251,13 @@ class SyncEngine(
             val now = System.currentTimeMillis()
             if (!stepsRegistered) registerSteps()
             if (ble.connection.value.connected) {
-                if (now - lastTimeSend > 30_000) sendTime()
+                if (now - lastTimeSend > 10 * 60_000) sendTime()
                 if (now - lastMediaCheck > 5_000) refreshMedia()
                 refreshWeather(force = false)
                 refreshStocks(force = false)
                 if (now - lastCalendarFetch > 300_000) refreshCalendar()
             } else {
+                ble.reconnectIfIdle()
                 refreshWeather(force = false)
                 refreshStocks(force = false)
             }
@@ -247,26 +265,14 @@ class SyncEngine(
         }
     }
 
+    /** Full sync: used once per connection. */
     fun sendSnapshot(state: PersistedState) {
         if (!ble.connection.value.connected) return
-        lastSentSnapshot = state.copy(lastSync = 0)
+        lastFullSync = System.currentTimeMillis()
+        lastSentSnapshot = state
         sendTime()
-        val version = state.layout.version.coerceAtLeast(1)
-        ble.send(Msg.LAYOUT, LayoutPayload(state.layout.toPayload(), version).encode())
-        val s = state.settings
-        ble.send(
-            Msg.SETTINGS,
-            SettingsPayload(
-                brightness = s.brightness.coerceIn(10, 255),
-                sleepSec = s.sleepSec.coerceIn(0, 240),
-                rotation = s.rotation.coerceIn(0, 3),
-                twelveHour = s.twelveHour,
-                celsius = s.celsius,
-                wifiEnabled = s.wifiEnabled,
-                showSeconds = s.showSeconds,
-                currentPage = s.currentPage.coerceIn(0, state.layout.pages.size - 1),
-            ).encode(),
-        )
+        sendLayout(state)
+        sendSettings(state.settings)
         if (state.weather.valid) ble.send(Msg.WEATHER, state.weather.toPayload().encode())
         state.notes.forEachIndexed { index, note ->
             if (note.isNotBlank()) ble.send(Msg.TEXT, TextPayload(index, note).encode())
@@ -274,18 +280,98 @@ class SyncEngine(
         state.stocks.filter { it.valid }.forEach { stock ->
             ble.send(Msg.STOCK, stock.toPayload().encode())
         }
-        state.notifications.takeIf { it.valid }?.let {
-            ble.send(Msg.NOTIFICATION, NotificationPayload(it.app, it.title, it.body, it.count, it.updated).encode())
+        state.notifications.takeIf { it.valid }?.let { sendNotification(it) }
+        state.media.takeIf { it.valid }?.let { sendMedia(it) }
+        state.calendar.takeIf { it.valid }?.let { sendCalendar(it) }
+        state.steps.takeIf { it.valid }?.let { sendSteps(it) }
+        sendLocation(state)
+        repo.setLastSync(System.currentTimeMillis() / 1000)
+    }
+
+    /** Incremental sync: only the parts of [next] that differ from [prev]. */
+    private fun sendChanges(prev: PersistedState, next: PersistedState) {
+        var sent = false
+        if (prev.layout.pages != next.layout.pages) { sendLayout(next); sent = true }
+        if (prev.settings.copy(currentPage = 0) != next.settings.copy(currentPage = 0)) {
+            sendSettings(next.settings); sent = true
         }
-        state.media.takeIf { it.valid }?.let {
-            ble.send(Msg.MEDIA, MediaPayload(it.title, it.artist, it.playing, it.progressPct, it.updated).encode())
+        if (next.weather.valid && prev.weather != next.weather) {
+            ble.send(Msg.WEATHER, next.weather.toPayload().encode()); sent = true
         }
-        state.calendar.takeIf { it.valid }?.let {
-            ble.send(Msg.CALENDAR, CalendarPayload(it.title, it.start, it.allDay, it.location, it.updated).encode())
+        next.notes.forEachIndexed { index, note ->
+            if (prev.notes.getOrNull(index) != note) { ble.send(Msg.TEXT, TextPayload(index, note).encode()); sent = true }
         }
-        state.steps.takeIf { it.valid }?.let {
-            ble.send(Msg.STEPS, StepsPayload(it.steps, it.goal, it.updated).encode())
+        next.stocks.forEachIndexed { index, stock ->
+            val before = prev.stocks.getOrNull(index)
+            if (before != stock && (stock.valid || before?.valid == true)) {
+                // An invalid entry goes out with a blank symbol, which clears it on the widget.
+                ble.send(Msg.STOCK, stock.toPayload().encode()); sent = true
+            }
         }
+        if (next.notifications.valid && prev.notifications != next.notifications) { sendNotification(next.notifications); sent = true }
+        if (next.media.valid && prev.media != next.media) { sendMedia(next.media); sent = true }
+        if (next.calendar.valid && prev.calendar != next.calendar) { sendCalendar(next.calendar); sent = true }
+        // Steps tick constantly while walking; batch them so the widget is not
+        // redrawn for every single step.
+        val stepsChanged = kotlin.math.abs(next.steps.steps - prev.steps.steps) >= 25 ||
+            next.steps.goal != prev.steps.goal || next.steps.valid != prev.steps.valid
+        if (next.steps.valid && stepsChanged) { sendSteps(next.steps); sent = true }
+        val keptSteps = if (next.steps.valid && !stepsChanged) prev.steps else next.steps
+        if (prev.sources.latitude != next.sources.latitude || prev.sources.longitude != next.sources.longitude ||
+            prev.sources.city != next.sources.city
+        ) { sendLocation(next); sent = true }
+        lastSentSnapshot = next.copy(steps = keptSteps)
+        if (sent) repo.setLastSync(System.currentTimeMillis() / 1000)
+    }
+
+    private fun sendLayout(state: PersistedState) {
+        val version = state.layout.version.coerceAtLeast(1)
+        ble.send(Msg.LAYOUT, LayoutPayload(state.layout.toPayload(), version).encode())
+    }
+
+    private fun settingsPayload(s: dev.gourav.espwidget.data.SettingsModel, brightness: Int = s.brightness) =
+        SettingsPayload(
+            brightness = brightness.coerceIn(10, 255),
+            sleepSec = s.sleepSec.coerceIn(0, 240),
+            rotation = s.rotation.coerceIn(0, 3),
+            twelveHour = s.twelveHour,
+            celsius = s.celsius,
+            wifiEnabled = s.wifiEnabled,
+            showSeconds = s.showSeconds,
+            // Ignored by firmware 1.1+: the widget owns which page is showing.
+            currentPage = 0,
+        )
+
+    private fun sendSettings(s: dev.gourav.espwidget.data.SettingsModel) {
+        ble.send(Msg.SETTINGS, settingsPayload(s).encode())
+    }
+
+    /** Live brightness while the slider is being dragged (throttled, not saved). */
+    fun previewBrightness(value: Int) {
+        if (!ble.connection.value.connected) return
+        val now = System.currentTimeMillis()
+        if (now - lastBrightnessPreview < 90) return
+        lastBrightnessPreview = now
+        ble.send(Msg.SETTINGS, settingsPayload(repo.persisted.value.settings, value).encode())
+    }
+
+    private fun sendNotification(it: dev.gourav.espwidget.data.NotificationModel) {
+        ble.send(Msg.NOTIFICATION, NotificationPayload(it.app, it.title, it.body, it.count, it.updated).encode())
+    }
+
+    private fun sendMedia(it: dev.gourav.espwidget.data.MediaModel) {
+        ble.send(Msg.MEDIA, MediaPayload(it.title, it.artist, it.playing, it.progressPct, it.updated).encode())
+    }
+
+    private fun sendCalendar(it: dev.gourav.espwidget.data.CalendarModel) {
+        ble.send(Msg.CALENDAR, CalendarPayload(it.title, it.start, it.allDay, it.location, it.updated).encode())
+    }
+
+    private fun sendSteps(it: StepsModel) {
+        ble.send(Msg.STEPS, StepsPayload(it.steps, it.goal, it.updated).encode())
+    }
+
+    private fun sendLocation(state: PersistedState) {
         ble.send(
             Msg.LOCATION,
             LocationPayload(
@@ -294,7 +380,6 @@ class SyncEngine(
                 state.sources.city,
             ).encode(),
         )
-        repo.setLastSync(System.currentTimeMillis() / 1000)
     }
 
     fun sendTime() {
@@ -338,9 +423,16 @@ class SyncEngine(
         scope.launch {
             val stocks = withContext(Dispatchers.IO) { StockSource.fetch(state.sources.stockSymbols) }
             if (stocks.any { it.valid }) {
+                // Keep the last good quote when one symbol fails, but clear
+                // slots whose symbol was removed from the watchlist.
                 val merged = List(6) { index ->
-                    stocks.getOrNull(index) ?: state.stocks.getOrNull(index)
-                        ?: dev.gourav.espwidget.data.StockModel(index = index)
+                    val fresh = stocks.getOrNull(index)
+                    when {
+                        fresh == null -> dev.gourav.espwidget.data.StockModel(index = index)
+                        fresh.valid -> fresh
+                        else -> state.stocks.getOrNull(index)?.takeIf { it.valid && it.symbol == fresh.symbol }
+                            ?: fresh
+                    }
                 }
                 repo.setStocks(merged)
                 repo.log("Watchlist updated (${stocks.count { it.valid }} symbols)")
@@ -364,7 +456,7 @@ class SyncEngine(
         if (!state.sources.mediaEnabled) return
         val media = MediaSource.current(context) ?: return
         if (media.title != state.media.title || media.artist != state.media.artist ||
-            media.playing != state.media.playing || kotlin.math.abs(media.progressPct - state.media.progressPct) > 2
+            media.playing != state.media.playing || kotlin.math.abs(media.progressPct - state.media.progressPct) >= 5
         ) {
             repo.setMedia(media)
         }
@@ -475,7 +567,7 @@ class SyncEngine(
     )
 
     private fun dev.gourav.espwidget.data.StockModel.toPayload(): StockPayload = StockPayload(
-        symbol = symbol.take(11),
+        symbol = if (valid) symbol.take(11) else "",
         priceCents = priceCents,
         changeBp = changeBp,
         spark = spark.take(24),

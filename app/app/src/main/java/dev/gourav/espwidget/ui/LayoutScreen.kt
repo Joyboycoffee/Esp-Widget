@@ -149,6 +149,7 @@ fun LayoutScreen(state: AppState, onPreviewPage: (Int) -> Unit) {
             val slot = current?.slots?.getOrNull(index) ?: SlotModel()
             SlotEditor(
                 slot = slot,
+                stockLabels = state.persisted.sources.stockSymbols,
                 label = if (current?.template == 1) {
                     listOf("Top left", "Top right", "Bottom left", "Bottom right")[index]
                 } else {
@@ -184,6 +185,7 @@ private fun TemplateChip(label: String, selected: Boolean, modifier: Modifier = 
 @Composable
 private fun SlotEditor(
     slot: SlotModel,
+    stockLabels: List<String>,
     label: String,
     onChange: (SlotModel) -> Unit,
 ) {
@@ -239,14 +241,22 @@ private fun SlotEditor(
         if (!slot.isEmpty) {
             if (slot.type == 3) {
                 Spacer(Modifier.height(8.dp))
-                Text("Watchlist slot", fontSize = 10.sp, color = Muted, fontWeight = FontWeight.SemiBold)
+                Text("Show", fontSize = 10.sp, color = Muted, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(5.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    (0..5).forEach { option ->
-                        OptionChip("${option + 1}", slot.option == option) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                ) {
+                    // Option 6 = the whole watchlist as a list.
+                    WideChip("All stocks", slot.option >= 6) { onChange(slot.copy(option = 6)) }
+                    stockLabels.take(6).forEachIndexed { option, symbol ->
+                        WideChip(symbol.substringBefore('.'), slot.option == option) {
                             onChange(slot.copy(option = option))
                         }
                     }
+                }
+                if (stockLabels.isEmpty()) {
+                    Text("Add symbols in Settings → Markets first.", fontSize = 11.sp, color = Muted)
                 }
             }
             if (slot.type == 8) {
@@ -270,6 +280,21 @@ private fun SlotEditor(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun WideChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .height(30.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (selected) Ink else Paper, RoundedCornerShape(9.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = if (selected) CardWhite else Ink, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
 }
 

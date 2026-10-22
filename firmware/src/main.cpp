@@ -13,87 +13,92 @@
 #include "sync.h"
 #include "ui.h"
 
+// HTTPS (weather) + JSON + UI string buffers do not fit comfortably in the
+// default 8 KB loop stack; overflowing it was one source of random resets.
+SET_LOOP_TASK_STACK_SIZE(16 * 1024);
+
 namespace {
+constexpr uint32_t kDeepSleepAfterOffMs = 10UL * 60UL * 1000UL;  // screen off this long on battery -> deep sleep
+
 uint32_t s_lastRender = 0;
+uint32_t s_lastHeader = 0;
 uint32_t s_lastPower = 0;
 bool s_lastUsb = false;
 bool s_touchDown = false;
 uint32_t s_pressStart = 0;
-uint32_t s_lastRelease = 0;
 bool s_longHandled = false;
 bool s_screenOff = false;
+uint32_t s_screenOffSince = 0;
 int s_tapCount = 0;
 uint32_t s_lastTapRelease = 0;
+
+void screenOff() {
+  if (s_screenOff) return;
+  s_screenOff = true;
+  s_screenOffSince = millis();
+  displayFadeOut(power::brightness());
+}
+
+void screenOn() {
+  if (!s_screenOff) return;
+  s_screenOff = false;
+  uiRender();  // paint the current content while the backlight is still dark
+  displayFadeIn(power::brightness());
+}
 
 void handleTouch() {
   const bool down = digitalRead(PIN_TOUCH) == TOUCH_ACTIVE_LEVEL;
   const uint32_t now = millis();
 
-  // 1. Initial Press
   if (down && !s_touchDown) {
     s_touchDown = true;
     s_pressStart = now;
     s_longHandled = false;
     gState.lastActivityMs = now;
-
-    // If screen was turned off, pressing it once turns it back on!
     if (s_screenOff) {
-      s_screenOff = false;
-      s_longHandled = true;  // Consume this touch purely as screen wake-up
+      // A touch on a dark screen only wakes it; it never changes the page.
+      s_longHandled = true;
       s_tapCount = 0;
-      gState.dirty = true;
-      uiRender();
-      displayFadeIn(gState.settings.brightness);
+      screenOn();
       return;
     }
   }
 
-  // 2. Holding:
-  // - 2 seconds: turns screen OFF
+  // Hold 2 s: screen off.  Hold 6 s: restart.
   if (down && !s_longHandled && !s_screenOff && (now - s_pressStart >= 2000)) {
     s_longHandled = true;
-    s_screenOff = true;
-    displayFadeOut(gState.settings.brightness);
     s_tapCount = 0;
-    gState.lastActivityMs = now;
+    screenOff();
   }
-  // - 6 seconds: Hardware Emergency REBOOT (no need to short battery terminals!)
   if (down && (now - s_pressStart >= 6000)) {
-    s_longHandled = true;
-    tft.setBrightness(gState.settings.brightness);
+    tft.setBrightness(power::brightness());
     uiRebootSplash();
     delay(500);
     ESP.restart();
   }
 
-  // 3. Release
   if (!down && s_touchDown) {
     s_touchDown = false;
     const uint32_t duration = now - s_pressStart;
-    s_lastRelease = now;
-
-    if (s_longHandled) {
-      return;
-    }
-    if (duration >= 20 && duration < 1000) {
-      // Valid tap registered
+    if (s_longHandled) return;
+    if (duration >= 25 && duration < 1000) {
       s_tapCount++;
       s_lastTapRelease = now;
       gState.lastActivityMs = now;
     }
   }
 
-  // 4. Multi-tap processing (when finger is released and 350ms window elapses)
+  // Taps are counted for 350 ms after the last release.
   if (s_tapCount > 0 && !s_touchDown && (now - s_lastTapRelease >= 350)) {
     const int taps = s_tapCount;
     s_tapCount = 0;
-
-    if (taps == 4) {
-      // Four taps: toggle Wi-Fi!
+    if (taps >= 4) {
       net::toggle();
     } else if (taps == 1) {
-      // Single tap: next page!
       uiNextPage(1);
+      s_lastRender = millis();
+    } else if (taps == 2) {
+      uiNextPage(-1);
       s_lastRender = millis();
     }
     gState.lastActivityMs = now;
@@ -101,78 +106,92 @@ void handleTouch() {
 }
 
 void handlePowerTransitions() {
-  if (gState.usbPower != s_lastUsb) {
-    s_lastUsb = gState.usbPower;
-    if (gState.usbPower) {
-      stateSetToast("Docked - WiFi enabled", 2200);
-      gState.bleActive = true;
-      ble::startAdvertising(0);
-      net::begin();
-      power::setBrightness(gState.settings.brightness);
-    } else {
-      stateSetToast("On battery - BLE only", 2200);
-      net::stop();
-    }
-    gState.lastActivityMs = millis();
+  if (gState.usbPower == s_lastUsb) return;
+  s_lastUsb = gState.usbPower;
+  if (gState.usbPower) {
+    stateSetToast("Docked - Wi-Fi allowed", 2200);
+    gState.bleActive = true;
+    ble::startAdvertising(0);
+    net::begin();
+  } else {
+    stateSetToast("On battery - Bluetooth only", 2200);
+    net::stop();
   }
+  gState.lastActivityMs = millis();
 }
 
 void maybeSleep() {
   if (gState.usbPower) return;
-  if (gState.settings.sleep_sec == 0) return;
-  const uint32_t idle = millis() - gState.lastActivityMs;
-  if (idle > 15000 && !s_screenOff && power::brightness() > 40 && gState.settings.sleep_sec > 20) {
-    power::setBrightness(40);
+  const uint32_t now = millis();
+  if (!s_screenOff && gState.settings.sleep_sec != 0 &&
+      now - gState.lastActivityMs > static_cast<uint32_t>(gState.settings.sleep_sec) * 1000UL) {
+    screenOff();
   }
-  if (idle > static_cast<uint32_t>(gState.settings.sleep_sec) * 1000UL && !s_screenOff) {
-    s_screenOff = true;
-    displayFadeOut(power::brightness());
+  // Screen has been dark for a long time on battery: power everything down.
+  // A touch wakes the widget again (it reboots and reconnects in ~1 s).
+  if (s_screenOff && !s_touchDown && now - s_screenOffSince > kDeepSleepAfterOffMs) {
+    if (gState.pageSaveAt) stateSaveSettings();
+    power::enterDeepSleep();
   }
+}
+
+void lowerCpuClock() {
+  // 80 MHz is plenty for this UI, keeps BLE and Wi-Fi fully working and
+  // noticeably lowers idle current versus the default 160 MHz. Done before
+  // the radios start so their timing is configured for the final clock.
+  setCpuFrequencyMhz(80);
+  Serial.printf("[POWER] CPU %lu MHz\n", static_cast<unsigned long>(getCpuFrequencyMhz()));
 }
 }  // namespace
 
 void setup() {
   Serial.begin(115200);
-  delay(150);
+  delay(50);
   displayBegin();
   LittleFS.begin(true);
   stateBegin();
   pinMode(PIN_TOUCH, INPUT_PULLDOWN);
   power::begin();
   espclock::begin();
-  uiBegin();
+  uiBegin();  // allocate the draw buffer before BLE/Wi-Fi fragment the heap
 
   const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
   if (cause == ESP_SLEEP_WAKEUP_UNDEFINED) {
     uiSplash();
-    displayFadeIn(gState.settings.brightness);
-    delay(1000);
-    displayFadeOut(gState.settings.brightness);
-    uiClearAndRender();
-    displayFadeIn(gState.settings.brightness);
+    displayFadeIn(power::brightness());
+    delay(900);
+    displayFadeOut(power::brightness());
+    uiRender();
+    displayFadeIn(power::brightness());
   } else {
-    tft.setBrightness(gState.settings.brightness);
-    gState.dirty = true;
+    // Woken by touch: the finger is probably still down. Swallow that press
+    // so the wake-up tap does not also flip the page.
+    s_touchDown = digitalRead(PIN_TOUCH) == TOUCH_ACTIVE_LEVEL;
+    s_longHandled = true;
+    s_pressStart = millis();
+    uiRender();
+    displayFadeIn(power::brightness());
   }
 
+  lowerCpuClock();
   ble::begin();
   net::begin();
   s_lastUsb = gState.usbPower;
   gState.lastActivityMs = millis();
   s_lastPower = millis();
 
+  // 30 s is long enough for a slow TLS handshake but still catches real hangs.
   esp_task_wdt_config_t twdt_config = {
-      .timeout_ms = 8000,
-      .idle_core_mask = (1 << 0),
+      .timeout_ms = 30000,
+      .idle_core_mask = 0,
       .trigger_panic = true,
   };
   esp_task_wdt_reconfigure(&twdt_config);
   esp_task_wdt_add(NULL);
 
-  Serial.printf("[BOOT] ESP Widget %d.%d.%d, free heap %lu, depth %d\n", ESPW_VERSION_MAJOR,
+  Serial.printf("[BOOT] ESP Widget %d.%d.%d, free heap %lu, reset reason %d\n", ESPW_VERSION_MAJOR,
                 ESPW_VERSION_MINOR, ESPW_VERSION_PATCH,
-                static_cast<unsigned long>(ESP.getFreeHeap()),
-                static_cast<int>(canvas.getColorDepth()));
+                static_cast<unsigned long>(ESP.getFreeHeap()), static_cast<int>(esp_reset_reason()));
 }
 
 void loop() {
@@ -189,6 +208,10 @@ void loop() {
     power::update();
     handlePowerTransitions();
   }
+  if (gState.pageSaveAt && static_cast<int32_t>(millis() - gState.pageSaveAt) >= 0) {
+    gState.pageSaveAt = 0;
+    stateSaveSettings();
+  }
 
   if (!s_screenOff) {
     const uint32_t now = millis();
@@ -199,13 +222,17 @@ void loop() {
       gState.dirty = true;
     }
 
-    const bool secondTick = uiNeedsSecondTick();
-    const uint32_t interval = gState.pairingActive ? 500 : secondTick ? 1000 : 30000;
+    const uint32_t interval = uiNeedsSecondTick() ? 1000 : 30000;
     if (gState.dirty || now - s_lastRender >= interval) {
       s_lastRender = now;
+      s_lastHeader = now;
       uiRender();
+    } else if (uiHeaderAnimating() && now - s_lastHeader >= 500) {
+      // Only the status bar blinks; redrawing just that strip is cheap.
+      s_lastHeader = now;
+      uiRenderHeader();
     }
   }
   maybeSleep();
-  delay(5);
+  delay(s_screenOff ? 40 : 8);
 }

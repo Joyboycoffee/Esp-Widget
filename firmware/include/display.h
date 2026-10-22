@@ -9,8 +9,6 @@ class LGFX_ST7789 : public lgfx::LGFX_Device {
   lgfx::Light_PWM _light_instance;
 
  public:
-  inline void pushSprite(int32_t = 0, int32_t = 0) {}
-
   LGFX_ST7789() {
     {
       auto cfg = _bus_instance.config();
@@ -63,7 +61,6 @@ class LGFX_ST7789 : public lgfx::LGFX_Device {
 };
 
 extern LGFX_ST7789 tft;
-extern LGFX_ST7789& canvas;
 
 void displayBegin();
 void displayFadeIn(uint8_t target);

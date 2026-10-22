@@ -6,5 +6,6 @@ void begin();
 void update();
 void enterDeepSleep();
 void setBrightness(uint8_t value);
+void applyBrightness();
 uint8_t brightness();
 }  // namespace power

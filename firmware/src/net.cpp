@@ -5,6 +5,7 @@
 #include <math.h>
 #include <NetworkClientSecure.h>
 #include <WiFi.h>
+#include <esp_task_wdt.h>
 #include <time.h>
 
 #include "app_state.h"
@@ -56,7 +57,9 @@ void fetchWeather() {
     publishState(3);
     return;
   }
+  esp_task_wdt_reset();
   const int code = http.GET();
+  esp_task_wdt_reset();
   if (code != HTTP_CODE_OK) {
     Serial.printf("[NET] weather HTTP %d\n", code);
     http.end();
@@ -180,8 +183,8 @@ void toggle() {
       publishState(1);
       stateSetToast("Wi-Fi: ON (Connecting)", 2500);
     } else {
-      publishState(1);
-      stateSetToast("Wi-Fi: ON (Set SSID in app)", 2500);
+      publishState(3);  // nothing to join: show "not connected", don't blink forever
+      stateSetToast("Wi-Fi on - set network in app", 2500);
     }
   } else {
     gState.settings.flags &= ~0x04;
@@ -220,7 +223,9 @@ void loop() {
     } else {
       WiFi.mode(WIFI_STA);
       WiFi.disconnect(false, false);
+      esp_task_wdt_reset();
       const int found = WiFi.scanNetworks();
+      esp_task_wdt_reset();
       sendScanResults(found);
       if (!s_wantConnect && WiFi.status() != WL_CONNECTED) {
         WiFi.mode(WIFI_OFF);

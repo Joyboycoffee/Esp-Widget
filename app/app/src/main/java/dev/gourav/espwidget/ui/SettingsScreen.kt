@@ -86,10 +86,14 @@ fun SettingsScreen(state: AppState, onRequestPermissions: () -> Unit) {
         }
         item {
             SectionCard(title = "Display", subtitle = "Applied instantly when connected") {
-                Text("Brightness · ${brightness.toInt()}", style = MaterialTheme.typography.bodyMedium, color = Muted)
+                Text("Brightness · ${(brightness / 2.55f).toInt()}%", style = MaterialTheme.typography.bodyMedium, color = Muted)
                 Slider(
                     value = brightness,
-                    onValueChange = { brightness = it },
+                    onValueChange = {
+                        brightness = it
+                        // The widget follows the slider live while you drag.
+                        AppGraph.engine.previewBrightness(it.toInt())
+                    },
                     onValueChangeFinished = {
                         AppGraph.repository.setSettings(settings.copy(brightness = brightness.toInt().coerceIn(10, 255)))
                     },
@@ -231,9 +235,34 @@ fun SettingsScreen(state: AppState, onRequestPermissions: () -> Unit) {
                     value = symbols,
                     onValueChange = { symbols = it },
                     label = { Text("Symbols, comma separated") },
-                    supportingText = { Text("e.g. AAPL.US, MSFT.US, RELIANCE.IN") },
+                    supportingText = { Text("Up to 6. e.g. AAPL.US, MSFT.US, RELIANCE.IN, TCS.IN") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
+                )
+                Spacer(Modifier.height(6.dp))
+                Button(
+                    onClick = {
+                        AppGraph.repository.setSources(
+                            sources.copy(
+                                stockSymbols = symbols.split(',', ' ', '\n')
+                                    .map { it.trim().uppercase() }
+                                    .filter { it.isNotBlank() }
+                                    .take(6),
+                            ),
+                        )
+                        AppGraph.engine.refreshStocks(force = true)
+                    },
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(containerColor = Ink, contentColor = CardWhite),
+                ) {
+                    Icon(Icons.Rounded.Check, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Save watchlist")
+                }
+                Text(
+                    "Choose which stock a card shows (or the whole list) in Layout → Stocks card.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Muted,
                 )
                 Spacer(Modifier.height(6.dp))
                 Text("Refresh every ${sources.stockMinutes} min", style = MaterialTheme.typography.bodyMedium, color = Muted)

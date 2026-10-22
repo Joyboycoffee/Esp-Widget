@@ -122,10 +122,12 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
       break;
     case espw::MsgType::Weather:
       if (len >= sizeof(espw::WeatherPayload)) {
-        memcpy(&gState.weather, payload, sizeof(espw::WeatherPayload));
-        gState.weatherValid = gState.weather.updated != 0;
-        gPrefs.putBytes("weather", &gState.weather, sizeof(gState.weather));
-        gState.dirty = true;
+        if (memcmp(&gState.weather, payload, sizeof(espw::WeatherPayload)) != 0) {
+          memcpy(&gState.weather, payload, sizeof(espw::WeatherPayload));
+          gState.weatherValid = gState.weather.updated != 0;
+          gPrefs.putBytes("weather", &gState.weather, sizeof(gState.weather));
+          gState.dirty = true;
+        }
       } else applied = false;
       break;
     case espw::MsgType::Battery:
@@ -140,7 +142,7 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
         memcpy(&s, payload, sizeof(s));
         const uint8_t index = s.index % 6;
         gState.stocks[index] = s;
-        gState.stockValid[index] = true;
+        gState.stockValid[index] = s.symbol[0] != 0;  // blank symbol = removed from watchlist
         gState.dirty = true;
       } else applied = false;
       break;
@@ -177,9 +179,13 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
         espw::TextPayload t{};
         memcpy(&t, payload, sizeof(t));
         if (t.slot < 4) {
-          strlcpy(gState.texts[t.slot], t.text, sizeof(gState.texts[t.slot]));
-          stateSaveTexts();
-          gState.dirty = true;
+          char text[sizeof(gState.texts[0])];
+          strlcpy(text, t.text, sizeof(text));
+          if (strcmp(text, gState.texts[t.slot]) != 0) {
+            strlcpy(gState.texts[t.slot], text, sizeof(gState.texts[t.slot]));
+            stateSaveTexts();
+            gState.dirty = true;
+          }
         } else applied = false;
       } else applied = false;
       break;
@@ -189,11 +195,15 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
         memcpy(&loc, payload, sizeof(loc));
         if (loc.lat_e6 >= -90000000 && loc.lat_e6 <= 90000000 &&
             loc.lon_e6 >= -180000000 && loc.lon_e6 <= 180000000) {
-          gState.location.lat_e6 = loc.lat_e6;
-          gState.location.lon_e6 = loc.lon_e6;
-          strlcpy(gState.location.city, loc.city, sizeof(gState.location.city));
-          stateSaveLocation();
-          gState.dirty = true;
+          LocationConfig next{};
+          next.lat_e6 = loc.lat_e6;
+          next.lon_e6 = loc.lon_e6;
+          strlcpy(next.city, loc.city, sizeof(next.city));
+          if (memcmp(&next, &gState.location, sizeof(next)) != 0) {
+            gState.location = next;
+            stateSaveLocation();
+            gState.dirty = true;
+          }
         } else applied = false;
       } else applied = false;
       break;
@@ -202,11 +212,18 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
         espw::LayoutPayload layout{};
         memcpy(&layout, payload, sizeof(layout));
         if (validLayout(layout)) {
-          gState.layout = layout;
-          if (gState.settings.current_page >= layout.pages) gState.settings.current_page = 0;
-          stateSaveLayout();
-          stateSaveSettings();
-          gState.dirty = true;
+          // Ignore the version byte when comparing: the app bumps it on every
+          // edit. Re-sending the same layout must not rewrite flash or redraw.
+          layout.version = gState.layout.version;
+          if (memcmp(&layout, &gState.layout, sizeof(layout)) != 0) {
+            gState.layout = layout;
+            if (gState.settings.current_page >= layout.pages) {
+              gState.settings.current_page = layout.pages - 1;
+              stateSaveSettings();
+            }
+            stateSaveLayout();
+            gState.dirty = true;
+          }
         } else applied = false;
       } else applied = false;
       break;
@@ -215,12 +232,25 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
         espw::SettingsPayload s{};
         memcpy(&s, payload, sizeof(s));
         if (s.brightness >= 10 && s.rotation <= 3 && s.sleep_sec <= 240) {
-          if (s.current_page >= statePageCount()) s.current_page = 0;
+          // The page shown is owned by the widget (tap to change). The app's
+          // copy is stale and used to yank the display back to page 1.
+          s.current_page = gState.settings.current_page;
+          const bool brightnessChanged = s.brightness != gState.settings.brightness;
+          const bool visualChanged = s.rotation != gState.settings.rotation ||
+                                     s.flags != gState.settings.flags;
+          const bool changed = memcmp(&s, &gState.settings, sizeof(s)) != 0;
           gState.settings = s;
-          stateSaveSettings();
-          power::setBrightness(s.brightness);
-          uiApplyRotation();
-          gState.dirty = true;
+          if (brightnessChanged) power::setBrightness(s.brightness);
+          if (visualChanged) {
+            uiApplyRotation();
+            gState.dirty = true;
+          }
+          if (changed) {
+            // Brightness slider drags arrive many times a second; batch the
+            // flash write with the lazy page save instead of writing each one.
+            gState.pageSaveAt = millis() + 3000;
+          }
+          gState.lastActivityMs = millis();
         } else applied = false;
       } else applied = false;
       break;

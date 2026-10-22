@@ -7,9 +7,17 @@
 #include "theme.h"
 
 LGFX_ST7789 tft;
-LGFX_ST7789& canvas = tft;
 
 void displayBegin() {
+  // Deep sleep latches the backlight/reset/DC pins. Release them before the
+  // panel is initialised, otherwise the backlight stays stuck after waking.
+  gpio_deep_sleep_hold_dis();
+  gpio_hold_dis(static_cast<gpio_num_t>(PIN_TFT_BL));
+  gpio_hold_dis(static_cast<gpio_num_t>(PIN_TFT_RES));
+  gpio_hold_dis(static_cast<gpio_num_t>(PIN_TFT_DC));
+#if PIN_DEBUG_LED >= 0
+  gpio_hold_dis(static_cast<gpio_num_t>(PIN_DEBUG_LED));
+#endif
   tft.init();
   tft.setRotation(gState.settings.rotation);
   tft.setBrightness(0);
@@ -17,7 +25,7 @@ void displayBegin() {
   tft.fillScreen(C_BG);
   tft.endWrite();
 
-  Serial.printf("[DISPLAY] 16-bit direct RGB565 active. Free heap: %lu\n",
+  Serial.printf("[DISPLAY] ready. Free heap: %lu\n",
                 static_cast<unsigned long>(ESP.getFreeHeap()));
 }
 
