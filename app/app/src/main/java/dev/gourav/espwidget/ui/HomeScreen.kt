@@ -191,6 +191,7 @@ fun HomeScreen(
                 }
             }
         }
+        item { WidgetPowerCard(state) }
         item {
             SectionCard(title = "Today", subtitle = "Everything the widget is showing right now") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {

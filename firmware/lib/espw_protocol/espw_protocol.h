@@ -48,6 +48,7 @@ enum class MsgType : uint8_t {
   Status = 0x35,
   FactoryReset = 0x36,
   TimeReq = 0x37,
+  Command = 0x38,  // payload: CommandPayload
 };
 
 enum WidgetType : uint8_t {
@@ -241,6 +242,16 @@ struct WifiSetPayload {
   char ssid[32];
   char password[64];
   uint8_t connect;
+};
+
+enum Command : uint8_t {
+  CmdWakeScreen = 1,  // turn the screen on and keep it awake for a while
+  CmdDeepSleep = 2,   // radios off, screen off; only the touch button wakes it
+};
+
+struct CommandPayload {
+  uint8_t command;
+  uint8_t reserved[3];
 };
 
 struct PhotoBegin {

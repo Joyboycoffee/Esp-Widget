@@ -3,16 +3,16 @@
   "version": "1.0.0",
   "ok": true,
   "firmware": {
-    "version": "1.0.0",
-    "file": "esp-widget-1.0.0-full.bin",
-    "size": 2123936,
-    "sha256": "ac65f2f675f083e006d87facdd8e9396f685030b3bbbaba9417091b3379b5d8c",
+    "version": "1.1.0",
+    "file": "esp-widget-1.1.0-full.bin",
+    "size": 2159152,
+    "sha256": "758be704cec8caebce635c1cf4e56ec1bdad8f3db825f490118f5e2ca540f25c",
     "chip": "esp32c3",
     "offset": "0x0"
   },
   "esptool": "4.7.0",
   "pyserial": "3.5",
   "tkinter": "8.6",
-  "icon": "resources/app.ico",
+  "icon": "C:\\Users\\Gourav\\AppData\\Local\\Temp\\_MEI000029d42\\resources\\app.ico",
   "errors": []
 }

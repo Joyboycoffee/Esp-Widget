@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.ShowChart
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -41,6 +42,7 @@ import dev.gourav.espwidget.AppGraph
 private enum class Tab(val label: String) {
     HOME("Display"),
     LAYOUT("Layout"),
+    STOCKS("Stocks"),
     SYNC("Sync"),
     SETTINGS("Settings"),
 }
@@ -91,6 +93,7 @@ fun EspWidgetApp() {
                 val icons = listOf(
                     Icons.Rounded.Dashboard,
                     Icons.Rounded.Bluetooth,
+                    Icons.Rounded.ShowChart,
                     Icons.Rounded.Sync,
                     Icons.Rounded.Settings,
                 )
@@ -122,7 +125,7 @@ fun EspWidgetApp() {
             when (Tab.entries[tab]) {
                 Tab.HOME -> HomeScreen(
                     state = state,
-                    onOpenSync = { tab = 2 },
+                    onOpenSync = { tab = 3 },
                     onOpenLayout = { tab = 1 },
                     onGrantBluetooth = requestPermissions,
                 )
@@ -130,6 +133,7 @@ fun EspWidgetApp() {
                     state = state,
                     onPreviewPage = {},
                 )
+                Tab.STOCKS -> StocksScreen(state = state)
                 Tab.SYNC -> SyncScreen(
                     state = state,
                     requestPermissions = requestPermissions,

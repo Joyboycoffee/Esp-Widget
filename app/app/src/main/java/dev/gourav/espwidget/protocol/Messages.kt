@@ -75,6 +75,8 @@ data class SettingsPayload(
     val wifiEnabled: Boolean = true,
     val showSeconds: Boolean = false,
     val currentPage: Int = 0,
+    val darkTheme: Boolean = false,
+    val stocksMode: Boolean = false,
 ) {
     fun encode(): ByteArray {
         var flags = 0
@@ -82,6 +84,8 @@ data class SettingsPayload(
         if (celsius) flags = flags or 0x02
         if (wifiEnabled) flags = flags or 0x04
         if (showSeconds) flags = flags or 0x08
+        if (darkTheme) flags = flags or 0x10
+        if (stocksMode) flags = flags or 0x20
         return Wire.littleEndian(8)
             .put(brightness.toByte()).put(sleepSec.toByte()).put(rotation.toByte())
             .put(flags.toByte()).put(currentPage.toByte()).put(0).put(0).put(0).array()

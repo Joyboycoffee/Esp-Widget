@@ -12,6 +12,7 @@
 #include "power.h"
 #include "sync.h"
 #include "ui.h"
+#include "version.h"
 
 // HTTPS (weather) + JSON + UI string buffers do not fit comfortably in the
 // default 8 KB loop stack; overflowing it was one source of random resets.
@@ -44,6 +45,26 @@ void screenOn() {
   s_screenOff = false;
   uiRender();  // paint the current content while the backlight is still dark
   displayFadeIn(power::brightness());
+}
+
+// Commands from the phone (wake the screen / deep sleep). Run here, in loop(),
+// so the BLE callback never blocks and the ACK has already been sent.
+void handleRemoteCommands() {
+  if (gState.wakeRequested) {
+    gState.wakeRequested = false;
+    gState.lastActivityMs = millis();
+    if (s_screenOff) screenOn();
+  }
+  if (gState.sleepRequested && static_cast<int32_t>(millis() - gState.sleepAt) >= 0) {
+    gState.sleepRequested = false;
+    if (gState.pageSaveAt) stateSaveSettings();
+    if (!s_screenOff) {
+      uiSleepSplash();
+      delay(1400);
+      displayFadeOut(power::brightness());
+    }
+    power::enterDeepSleep();  // radios off; only the touch button wakes the widget
+  }
 }
 
 void handleTouch() {
@@ -92,7 +113,11 @@ void handleTouch() {
   if (s_tapCount > 0 && !s_touchDown && (now - s_lastTapRelease >= 350)) {
     const int taps = s_tapCount;
     s_tapCount = 0;
-    if (taps >= 4) {
+    if (uiDiagActive()) {
+      uiToggleDiag();  // any tap closes the diagnostics page
+    } else if (taps == 3) {
+      uiToggleDiag();  // triple tap opens it
+    } else if (taps >= 4) {
       net::toggle();
     } else if (taps == 1) {
       uiNextPage(1);
@@ -189,14 +214,15 @@ void setup() {
   esp_task_wdt_reconfigure(&twdt_config);
   esp_task_wdt_add(NULL);
 
-  Serial.printf("[BOOT] ESP Widget %d.%d.%d, free heap %lu, reset reason %d\n", ESPW_VERSION_MAJOR,
-                ESPW_VERSION_MINOR, ESPW_VERSION_PATCH,
+  Serial.printf("[BOOT] %s %d.%d.%d build %d, free heap %lu, reset reason %d\n", ESPW_FW_NAME, ESPW_VERSION_MAJOR,
+                ESPW_VERSION_MINOR, ESPW_VERSION_PATCH, ESPW_BUILD,
                 static_cast<unsigned long>(ESP.getFreeHeap()), static_cast<int>(esp_reset_reason()));
 }
 
 void loop() {
   esp_task_wdt_reset();
   handleTouch();
+  handleRemoteCommands();
   if (gState.toast[0] && millis() > gState.toastUntil) {
     gState.toast[0] = 0;
     gState.dirty = true;

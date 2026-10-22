@@ -4,6 +4,8 @@
 #include <WiFi.h>
 #include <driver/gpio.h>
 #include <esp_sleep.h>
+#include <soc/usb_serial_jtag_reg.h>
+#include <soc/soc.h>
 
 #include "app_state.h"
 #include "board_config.h"
@@ -15,12 +17,31 @@ namespace power {
 namespace {
 uint8_t s_brightness = 200;
 bool s_lowBattery = false;
+Diag s_diag;
+
+// A connected USB host sends a start-of-frame every millisecond, so the frame
+// counter of the built-in USB controller keeps changing while a computer is
+// attached. A plain wall charger never moves it.
+bool usbHostPresent() {
+  static uint32_t last = 0xFFFFFFFF;
+  static uint8_t stale = 0;
+  const uint32_t now = REG_READ(USB_SERIAL_JTAG_FRAM_NUM_REG) & USB_SERIAL_JTAG_SOF_FRAME_INDEX;
+  if (now != last) {
+    last = now;
+    stale = 0;
+    return true;
+  }
+  if (stale < 255) stale++;
+  return stale < 2;  // tolerate one identical sample
+}
 
 struct ChargerSense {
   bool charging;
   bool full;
   bool docked;
   bool wired;
+  int red;
+  int blue;
 };
 
 int lipoPercent(float v) {
@@ -37,7 +58,7 @@ int lipoPercent(float v) {
 // high-impedance and only pulsed low for a few microseconds so the pins never
 // back-feed the charger or make the LEDs glow faintly.
 ChargerSense sampleCharger() {
-  ChargerSense out{false, false, false, false};
+  ChargerSense out{false, false, false, false, 0, 0};
   gpio_pulldown_en(static_cast<gpio_num_t>(PIN_TP_BLUE));
   gpio_pulldown_en(static_cast<gpio_num_t>(PIN_TP_RED));
   delayMicroseconds(30);
@@ -48,6 +69,8 @@ ChargerSense sampleCharger() {
 
   // charging: red cathode low, blue high. full: red high, blue low.
   // docked/powered via TP4056: either LED pin is high (pulled down to 0 when unpowered on battery)
+  out.red = red;
+  out.blue = blue;
   out.charging = (red == 0 && blue == 1);
   out.full = (red == 1 && blue == 0);
   out.docked = (red == 1 || blue == 1);
@@ -71,6 +94,8 @@ void configureChargerPins() {
 // Only touches the backlight when the value actually changes, and never while
 // the screen is intentionally dark (sleep / long-press off): the next fade-in
 // picks up brightness() anyway.
+const Diag& diag() { return s_diag; }
+
 void applyBrightness() {
   if (tft.getBrightness() == 0) return;
   const uint8_t target = brightness();
@@ -105,7 +130,8 @@ void update() {
   // The ESP32's own USB port pulls the divider high (>= 2180 mV); a missing cell reads < 80 mV.
   // Both cases mean we are externally powered via the ESP32 Type-C port.
   const bool espUsb = (rawMv >= 2180.0f) || (rawMv < 80.0f);
-  const bool rawUsb = espUsb || charger.docked;
+  const bool host = usbHostPresent();
+  const bool rawUsb = espUsb || charger.docked || host;
 
   // Debounce USB state transitions to prevent floating ADC/charger spikes
   // from falsely toggling docked/on-battery toasts.
@@ -128,6 +154,14 @@ void update() {
   const bool usb = s_debouncedUsb;
 
   const bool voltageValid = vbat >= 2.60f && vbat <= 4.45f;
+  s_diag.rawMv = rawMv;
+  s_diag.vbat = vbat;
+  s_diag.voltageValid = voltageValid;
+  s_diag.ledRed = charger.red;
+  s_diag.ledBlue = charger.blue;
+  s_diag.byAdc = espUsb;
+  s_diag.byLed = charger.docked;
+  s_diag.byHost = host;
   const uint8_t previousPercent = gState.battery.percent;
   const uint16_t previousMv = gState.battery.millivolts;
 

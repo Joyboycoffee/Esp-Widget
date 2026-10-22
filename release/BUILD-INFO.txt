@@ -1,10 +1,10 @@
-ESP Widget 1.0.0
-Built: 2026-10-22T15:14:04Z
-Firmware: esp-widget-1.0.0-full.bin
+ESP Widget 1.1.0
+Built: 2026-10-22T16:55:45Z
+Firmware: esp-widget-1.1.0-full.bin
 Chip: ESP32-C3, 4 MB flash
 
 Flash with:
   release\desktop\ESPWidgetFlasher.exe
 
 Install the app with:
-  adb install -r release\android\EspWidget-1.0.0-release.apk
+  adb install -r release\android\EspWidget-1.1.0-release.apk

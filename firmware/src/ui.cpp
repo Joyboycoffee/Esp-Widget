@@ -1,6 +1,8 @@
 #include "ui.h"
 
 #include <LittleFS.h>
+#include <esp_system.h>
+#include <stdarg.h>
 
 #include "app_state.h"
 #include "clock.h"
@@ -10,6 +12,7 @@
 #include "net.h"
 #include "power.h"
 #include "theme.h"
+#include "version.h"
 
 namespace {
 
@@ -29,6 +32,11 @@ LovyanGFX* cv = &tft;  // current draw target
 int s_oy = 0;          // y of the band currently being drawn
 
 inline int Y(int y) { return y - s_oy; }
+
+// Full-screen "stocks only" mode (settings flag 0x20) and dark theme (0x10).
+inline bool stocksMode() { return (gState.settings.flags & 0x20) != 0; }
+inline bool darkTheme() { return (gState.settings.flags & 0x10) != 0; }
+int s_stockPage = 0;
 
 const char* weatherLabel(uint8_t code) {
   if (code == 0) return "Clear sky";
@@ -541,7 +549,7 @@ void drawCalendar(const Rect& r, uint16_t accent, bool hero) {
   if (hero) {
     cv->fillRoundRect(r.x + 14, r.y + 14, 52, 54, 10, accent);
     cv->setFont(&Fredoka12);
-    cv->setTextColor(C_INK, accent);
+    cv->setTextColor(C_ONACCENT, accent);
     String d = String(day);
     int spaceIdx = d.indexOf(' ');
     if (spaceIdx >= 0) {
@@ -560,7 +568,7 @@ void drawCalendar(const Rect& r, uint16_t accent, bool hero) {
     ellipsized(loc, r.x + 76, r.y + 74, r.w - 90, C_MUTED);
   } else {
     cv->fillRoundRect(r.x + 8, r.y + 10, 36, 36, 8, accent);
-    cv->setTextColor(C_INK, accent);
+    cv->setTextColor(C_ONACCENT, accent);
     String d = String(day);
     int sp = d.indexOf(' ');
     if (sp >= 0) {
@@ -631,11 +639,29 @@ void drawText(const Rect& r, uint16_t accent, bool hero, uint8_t slot) {
   }
 }
 
+// Paints the four corner wedges outside a rounded rectangle with the page
+// background, so a square image ends up with the same rounded shape as a card.
+void trimCorners(const Rect& r, int radius, uint16_t bg) {
+  for (int dy = 0; dy < radius; ++dy) {
+    const float yy = radius - dy - 0.5f;
+    const int cut = radius - static_cast<int>(sqrtf(static_cast<float>(radius * radius) - yy * yy));
+    if (cut <= 0) continue;
+    cv->fillRect(r.x, r.y + dy, cut, 1, bg);
+    cv->fillRect(r.x + r.w - cut, r.y + dy, cut, 1, bg);
+    cv->fillRect(r.x, r.y + r.h - 1 - dy, cut, 1, bg);
+    cv->fillRect(r.x + r.w - cut, r.y + r.h - 1 - dy, cut, 1, bg);
+  }
+}
+
 void drawPhoto(const Rect& r, uint16_t accent, bool hero) {
   if (gState.photoReady) {
-    const float scale = max((r.w - 4) / 240.0f, (r.h - 4) / 240.0f);
-    cv->drawJpgFile(LittleFS, "/photo.jpg", r.x + 2, r.y + 2, r.w - 4, r.h - 4, 0, 0, scale, scale,
+    // The photo is 240x240: scale it to cover the card, centred, then round the corners.
+    const float scale = max(r.w / 240.0f, r.h / 240.0f);
+    cv->clearClipRect();
+    cv->setClipRect(r.x, r.y, r.w, r.h);
+    cv->drawJpgFile(LittleFS, "/photo.jpg", r.x, r.y, r.w, r.h, 0, 0, scale, scale,
                     lgfx::datum_t::middle_center);
+    trimCorners(r, 16, C_BG);
     cv->drawRoundRect(r.x, r.y, r.w, r.h, 16, C_LINE);
     return;
   }
@@ -713,7 +739,7 @@ void header() {
   cv->drawRoundRect(x, by, bw, bh, 3, C_MUTED);
   const int inner = (bw - 4) * pct / 100;
   if (inner > 0) cv->fillRoundRect(x + 2, by + 2, inner, bh - 4, 2, level);
-  if (gState.charging) {
+  if (gState.charging || gState.usbPower) {
     // little bolt so charging is obvious even at 100% fill
     const int cx = x + bw / 2;
     cv->fillTriangle(cx + 1, by + 1, cx - 3, by + 7, cx, by + 7, C_INK);
@@ -727,17 +753,19 @@ void header() {
 
   // Left: today's date (or a hint until the phone has sent the time).
   char date[32];
-  espclock::formatDate(date, sizeof(date));
+  if (stocksMode()) {
+    espclock::formatTime(date, sizeof(date), (gState.settings.flags & 0x01) != 0, false);
+  } else {
+    espclock::formatDate(date, sizeof(date));
+  }
   if (!espclock::valid()) strlcpy(date, "Not synced", sizeof(date));
   cv->setFont(&Fredoka16);
   ellipsized(date, UI_MARGIN + 2, top + 3, x - UI_MARGIN - 8, C_INK, C_BG);
 }
 
 // Page indicator dots, centred in the bottom margin.
-void pageDots() {
-  const int count = statePageCount();
+void pageDotsN(int count, int cur) {
   if (count < 2) return;
-  const int cur = stateCurrentPage();
   const int y = Y(SCREEN_H - 5);
   const int step = 9;
   int x = SCREEN_W / 2 - ((count - 1) * step + 10) / 2;
@@ -751,6 +779,8 @@ void pageDots() {
     }
   }
 }
+
+void pageDots() { pageDotsN(statePageCount(), stateCurrentPage()); }
 
 // ------------------------------------------------------------------ pages --
 struct PageGeometry {
@@ -823,14 +853,151 @@ void drawPairing() {
   cv->drawCenterString("You only need to do this once", cx, y0 + 152);
 }
 
+
+// ---------------------------------------------------------- stocks mode --
+int validStocks(uint8_t* idx) {
+  int n = 0;
+  for (uint8_t i = 0; i < 6; ++i) {
+    if (gState.stockValid[i]) idx[n++] = i;
+  }
+  return n;
+}
+
+// One page with every stock as a row (only when there are two or more), then
+// one full-screen page per stock.
+int stockPageCount() {
+  uint8_t idx[6];
+  const int n = validStocks(idx);
+  return n >= 2 ? n + 1 : 1;
+}
+
+void stockRow(const Rect& r, const espw::StockPayload& st) {
+  const uint16_t trend = st.change_bp >= 0 ? C_GOOD : C_DANGER;
+  cv->fillRoundRect(r.x, r.y, r.w, r.h, 10, C_CARD);
+  cv->drawRoundRect(r.x, r.y, r.w, r.h, 10, C_LINE);
+  char sym[13], price[20], change[16];
+  sanitize(st.symbol, sym, sizeof(sym));
+  formatPrice(st, price, sizeof(price));
+  snprintf(change, sizeof(change), "%+.2f%%", st.change_bp / 100.0f);
+  cv->setFont(&Fredoka16);
+  if (cv->textWidth(sym) > 66) cv->setFont(&Fredoka12);  // long tickers such as RELIANCE
+  ellipsized(sym, r.x + 10, r.y + r.h / 2 - 8, 68, C_INK);
+  spark(Rect{r.x + 82, r.y + 6, 36, r.h - 12}, st.spark, 24, trend);
+  cv->setFont(&Fredoka16);
+  cv->setTextColor(C_INK, C_CARD);
+  cv->drawRightString(price, r.x + r.w - 10, r.y + r.h / 2 - 15);
+  cv->setFont(&Fredoka12);
+  cv->setTextColor(trend, C_CARD);
+  cv->drawRightString(change, r.x + r.w - 10, r.y + r.h / 2 + 2);
+}
+
+void stockDetail(const Rect& r, const espw::StockPayload& st) {
+  const uint16_t trend = st.change_bp >= 0 ? C_GOOD : C_DANGER;
+  card(r, trend, true);
+  cv->setClipRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4);
+  char sym[13], price[20], change[16];
+  sanitize(st.symbol, sym, sizeof(sym));
+  formatPrice(st, price, sizeof(price));
+  snprintf(change, sizeof(change), "%+.2f%%", st.change_bp / 100.0f);
+  cv->setFont(&Fredoka20);
+  ellipsized(sym, r.x + 16, r.y + 12, 120, C_INK);
+  cv->setFont(&Fredoka12);
+  cv->setTextColor(C_MUTED, C_CARD);
+  cv->drawRightString(st.market == 1 ? "Market open" : "Market closed", r.x + r.w - 16, r.y + 16);
+  cv->setFont(&Fredoka44);
+  if (cv->textWidth(price) > r.w - 32) cv->setFont(&Fredoka28);
+  cv->setTextColor(C_INK, C_CARD);
+  cv->drawString(price, r.x + 16, r.y + 38);
+  cv->fillRoundRect(r.x + 16, r.y + 92, 92, 24, 12, trend);
+  cv->setFont(&Fredoka16);
+  cv->setTextColor(C_WHITE, trend);
+  cv->drawCenterString(change, r.x + 16 + 46, r.y + 95);
+  icons::arrow(*cv, r.x + 120, r.y + 97, 14, trend, st.change_bp >= 0);
+  spark(Rect{r.x + 16, r.y + 126, r.w - 32, 52}, st.spark, 24, trend);
+  cv->setFont(&Fredoka12);
+  cv->setTextColor(C_MUTED, C_CARD);
+  cv->drawCenterString("last 24 days", r.x + r.w / 2, r.y + r.h - 18);
+  cv->clearClipRect();
+}
+
+void drawStocksScreen(int bandY, int bandH) {
+  uint8_t idx[6];
+  const int n = validStocks(idx);
+  const int pages = stockPageCount();
+  if (s_stockPage >= pages) s_stockPage = 0;
+  if (n == 0) {
+    const Rect r{UI_MARGIN, UI_CONTENT_Y, SCREEN_W - UI_MARGIN * 2, SCREEN_H - UI_CONTENT_Y - UI_BOTTOM};
+    if (r.y + r.h > bandY && r.y < bandY + bandH) {
+      card(Rect{r.x, Y(r.y), r.w, r.h}, C_SKY, true);
+      icons::chart(*cv, SCREEN_W / 2 - 16, Y(r.y + 56), 32, mixColor(C_SKY, C_CARD, 60));
+      cv->setFont(&Fredoka16);
+      cv->setTextColor(C_INK, C_CARD);
+      cv->drawCenterString("No stocks yet", SCREEN_W / 2, Y(r.y + 108));
+      cv->setFont(&Fredoka12);
+      cv->setTextColor(C_MUTED, C_CARD);
+      cv->drawCenterString("Add symbols in the app's", SCREEN_W / 2, Y(r.y + 136));
+      cv->drawCenterString("Stocks tab", SCREEN_W / 2, Y(r.y + 154));
+    }
+    return;
+  }
+  if (n >= 2 && s_stockPage == 0) {
+    const int gap = 3;
+    const int rowH = constrain((SCREEN_H - UI_CONTENT_Y - UI_BOTTOM - gap * (n - 1)) / n, 31, 46);
+    for (int i = 0; i < n; ++i) {
+      const int top = UI_CONTENT_Y + i * (rowH + gap);
+      if (top + rowH + 2 <= bandY || top >= bandY + bandH) continue;
+      stockRow(Rect{UI_MARGIN, Y(top), SCREEN_W - UI_MARGIN * 2, rowH}, gState.stocks[idx[i]]);
+    }
+  } else {
+    const int which = n >= 2 ? s_stockPage - 1 : 0;
+    const Rect r{UI_MARGIN, UI_CONTENT_Y, SCREEN_W - UI_MARGIN * 2, SCREEN_H - UI_CONTENT_Y - UI_BOTTOM};
+    if (r.y + r.h + 3 > bandY && r.y < bandY + bandH) {
+      stockDetail(Rect{r.x, Y(r.y), r.w, r.h}, gState.stocks[idx[which]]);
+    }
+  }
+  if (bandY + bandH >= SCREEN_H) pageDotsN(pages, s_stockPage);
+}
+
+bool s_diag = false;
+uint32_t s_diagSince = 0;
+
+void drawDiag() {
+  const power::Diag& d = power::diag();
+  cv->setFont(&Fredoka12);
+  cv->setTextColor(C_INK, C_BG);
+  char line[48];
+  int row = 0;
+  auto put = [&](const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    cv->setTextColor(C_INK, C_BG);
+    cv->drawString(line, 8, Y(6 + row * 17));
+    row++;
+  };
+  put("%s", ESPW_FW_NAME);
+  put("v%d.%d.%d  build %d", ESPW_VERSION_MAJOR, ESPW_VERSION_MINOR, ESPW_VERSION_PATCH, ESPW_BUILD);
+  put("ADC pin: %d mV  (vbat %.2f V)", static_cast<int>(d.rawMv), d.vbat);
+  put("cell valid %d  batt %d%% %dmV", d.voltageValid ? 1 : 0, gState.battery.percent, gState.battery.millivolts);
+  put("LED red %d  blue %d", d.ledRed, d.ledBlue);
+  put("USB rule: adc %d  led %d  host %d", d.byAdc ? 1 : 0, d.byLed ? 1 : 0, d.byHost ? 1 : 0);
+  put("USB now %d   charging %d  full %d", gState.usbPower ? 1 : 0, gState.charging ? 1 : 0, gState.chargeFull ? 1 : 0);
+  put("BLE act %d conn %d pair %d", gState.bleActive ? 1 : 0, gState.bleConnected ? 1 : 0, gState.pairingActive ? 1 : 0);
+  put("Wi-Fi state %d  rssi %d", gState.wifiState, gState.wifiRssi);
+  put("Heap %u KB  min %u KB", static_cast<unsigned>(ESP.getFreeHeap() / 1024),
+      static_cast<unsigned>(ESP.getMinFreeHeap() / 1024));
+  put("Uptime %lu s  reset %d", static_cast<unsigned long>(millis() / 1000), static_cast<int>(esp_reset_reason()));
+  put("Draw: %s", s_bandOk ? "band buffer" : "direct");
+  put("Page %d of %d", stateCurrentPage() + 1, statePageCount());
+  cv->setTextColor(C_MUTED, C_BG);
+  cv->drawString("Tap to close", 8, Y(6 + row * 17));
+}
+
 // Draws every element that intersects the band [y, y+h) and pushes it.
 void renderBand(int y, int h, bool headerOnly) {
   if (h <= 0) return;
   if (s_bandOk) {
-    // pushSprite() sends the buffer by DMA in the background. Drawing the next
-    // band into it before that finishes corrupted the screen (cards from one
-    // row appearing on top of another), so wait for the transfer first.
-    tft.waitDMA();
     cv = &s_band;
     s_oy = y;
     s_band.fillRect(0, 0, SCREEN_W, h, C_BG);
@@ -841,25 +1008,37 @@ void renderBand(int y, int h, bool headerOnly) {
     tft.fillRect(0, y, SCREEN_W, h, C_BG);
   }
 
-  if (y < UI_CONTENT_Y) header();
-  if (!headerOnly) {
-    const uint8_t page = stateCurrentPage();
-    const auto& cfg = gState.layout.page[page];
-    const PageGeometry g = geometry(page);
-    for (int i = 0; i < g.count; ++i) {
-      const Rect& r = g.slots[i];
-      if (r.y + r.h + 3 <= y || r.y >= y + h) continue;
-      drawWidget(cfg.slots[i], Rect{r.x, Y(r.y), r.w, r.h}, g.hero[i]);
+  if (s_diag) {
+    drawDiag();
+  } else if (stocksMode()) {
+    if (y < UI_CONTENT_Y) header();
+    if (!headerOnly) {
+      drawStocksScreen(y, h);
+      drawToast();
+      drawPairing();
     }
-    if (y + h >= SCREEN_H) pageDots();
-    drawToast();
+  } else {
+    if (y < UI_CONTENT_Y) header();
+    if (!headerOnly) {
+      const uint8_t page = stateCurrentPage();
+      const auto& cfg = gState.layout.page[page];
+      const PageGeometry g = geometry(page);
+      for (int i = 0; i < g.count; ++i) {
+        const Rect& r = g.slots[i];
+        if (r.y + r.h + 3 <= y || r.y >= y + h) continue;
+        drawWidget(cfg.slots[i], Rect{r.x, Y(r.y), r.w, r.h}, g.hero[i]);
+      }
+      if (y + h >= SCREEN_H) pageDots();
+      drawToast();
+      drawPairing();
+    }
   }
-  drawPairing();
 
   if (s_bandOk) {
-    tft.setClipRect(0, y, SCREEN_W, h);
-    s_band.pushSprite(&tft, 0, y);
-    tft.waitDMA();
+    // Plain CPU-driven transfer of exactly the rows that belong to this band.
+    // (The earlier DMA-based pushSprite() could overlap with the next band and
+    // always sent the full sprite height, which left stale rows on screen.)
+    tft.pushImage(0, y, SCREEN_W, h, reinterpret_cast<const lgfx::swap565_t*>(s_band.getBuffer()));
   }
   tft.clearClipRect();
   cv = &tft;
@@ -867,6 +1046,7 @@ void renderBand(int y, int h, bool headerOnly) {
 }
 
 void renderAll() {
+  themeApply(darkTheme());
   const PageGeometry g = geometry(stateCurrentPage());
   tft.startWrite();
   renderBand(0, g.bandSplit[0], false);
@@ -894,6 +1074,7 @@ void uiApplyRotation() {
 }
 
 bool uiNeedsSecondTick() {
+  if (s_diag) return true;
   if (gState.toast[0]) return true;
   const bool seconds = (gState.settings.flags & 0x08) != 0;
   if (!seconds) return false;
@@ -907,11 +1088,28 @@ bool uiNeedsSecondTick() {
 }
 
 bool uiHeaderAnimating() {
+  if (s_diag) return false;
   return gState.pairingActive || (gState.bleActive && !gState.bleConnected) || gState.wifiState == 1;
+}
+
+bool uiDiagActive() { return s_diag; }
+
+void uiToggleDiag() {
+  s_diag = !s_diag;
+  s_diagSince = millis();
+  gState.dirty = true;
 }
 
 void uiNextPage(int delta) {
   if (delta == 0) return;
+  if (stocksMode()) {
+    const int pages = stockPageCount();
+    s_stockPage = ((s_stockPage + delta) % pages + pages) % pages;
+    renderAll();
+    gState.dirty = false;
+    gState.lastActivityMs = millis();
+    return;
+  }
   const uint8_t count = statePageCount();
   const uint8_t oldPage = stateCurrentPage();
   int newPage = static_cast<int>(oldPage) + delta;
@@ -928,6 +1126,7 @@ void uiNextPage(int delta) {
 }
 
 void uiSplash() {
+  themeApply(darkTheme());
   tft.startWrite();
   tft.fillScreen(C_BG);
   tft.fillCircle(120, 92, 38, C_PEACH);
@@ -935,10 +1134,15 @@ void uiSplash() {
   tft.fillCircle(120, 92, 12, C_SAGE);
   tft.setFont(&Fredoka28);
   tft.setTextColor(C_INK, C_BG);
-  tft.drawCenterString("ESP Widget", 120, 146);
+  tft.drawCenterString("ESP Widget", 120, 142);
+  tft.setFont(&Fredoka16);
+  tft.drawCenterString("Keychain", 120, 172);
   tft.setFont(&Fredoka12);
   tft.setTextColor(C_MUTED, C_BG);
-  tft.drawCenterString("little moments, always on", 120, 182);
+  char ver[32];
+  snprintf(ver, sizeof(ver), "v%d.%d.%d  build %d", ESPW_VERSION_MAJOR, ESPW_VERSION_MINOR,
+           ESPW_VERSION_PATCH, ESPW_BUILD);
+  tft.drawCenterString(ver, 120, 202);
   tft.endWrite();
 }
 
@@ -948,12 +1152,27 @@ void uiRender() {
 }
 
 void uiRenderHeader() {
+  themeApply(darkTheme());
   tft.startWrite();
   renderBand(0, UI_CONTENT_Y - 2, true);
   tft.endWrite();
 }
 
 void uiClearAndRender() { uiRender(); }
+
+void uiSleepSplash() {
+  themeApply(darkTheme());
+  tft.startWrite();
+  tft.fillScreen(C_BG);
+  tft.setFont(&Fredoka20);
+  tft.setTextColor(C_INK, C_BG);
+  tft.drawCenterString("Going to sleep", 120, 96);
+  tft.setFont(&Fredoka12);
+  tft.setTextColor(C_MUTED, C_BG);
+  tft.drawCenterString("Bluetooth and Wi-Fi are off.", 120, 138);
+  tft.drawCenterString("Press the button to wake me.", 120, 158);
+  tft.endWrite();
+}
 
 void uiRebootSplash() {
   tft.startWrite();

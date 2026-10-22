@@ -5,12 +5,13 @@ constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
   return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
 }
 
-constexpr uint16_t C_BG = rgb565(247, 243, 236);
-constexpr uint16_t C_CARD = rgb565(255, 253, 248);
-constexpr uint16_t C_INK = rgb565(58, 53, 64);
-constexpr uint16_t C_MUTED = rgb565(139, 132, 146);
-constexpr uint16_t C_LINE = rgb565(231, 224, 214);
-constexpr uint16_t C_SHADOW = rgb565(220, 212, 202);
+inline uint16_t C_BG = rgb565(247, 243, 236);
+inline uint16_t C_CARD = rgb565(255, 253, 248);
+inline uint16_t C_INK = rgb565(58, 53, 64);
+inline uint16_t C_MUTED = rgb565(139, 132, 146);
+inline uint16_t C_LINE = rgb565(231, 224, 214);
+inline uint16_t C_SHADOW = rgb565(220, 212, 202);
+constexpr uint16_t C_ONACCENT = rgb565(58, 53, 64);  // text drawn on pastel accents, both themes
 constexpr uint16_t C_WHITE = rgb565(255, 255, 255);
 constexpr uint16_t C_PEACH = rgb565(243, 183, 164);
 constexpr uint16_t C_SAGE = rgb565(169, 198, 167);
@@ -22,6 +23,25 @@ constexpr uint16_t C_DANGER = rgb565(214, 112, 112);
 constexpr uint16_t C_GOOD = rgb565(112, 164, 124);
 constexpr uint16_t C_SUN = rgb565(230, 178, 92);
 constexpr uint16_t C_RAIN = rgb565(126, 164, 203);
+
+// Light / dark palette. Accent colours stay the same in both themes.
+inline void themeApply(bool dark) {
+  if (dark) {
+    C_BG = rgb565(20, 19, 25);
+    C_CARD = rgb565(35, 33, 42);
+    C_INK = rgb565(240, 236, 230);
+    C_MUTED = rgb565(152, 146, 160);
+    C_LINE = rgb565(58, 54, 68);
+    C_SHADOW = rgb565(10, 10, 13);
+  } else {
+    C_BG = rgb565(247, 243, 236);
+    C_CARD = rgb565(255, 253, 248);
+    C_INK = rgb565(58, 53, 64);
+    C_MUTED = rgb565(139, 132, 146);
+    C_LINE = rgb565(231, 224, 214);
+    C_SHADOW = rgb565(220, 212, 202);
+  }
+}
 
 // 240x240 layout: 10px side margins, 8px gutters, 24px status bar on top and
 // a 10px bottom margin that also holds the page dots.

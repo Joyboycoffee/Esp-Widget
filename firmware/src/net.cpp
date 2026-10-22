@@ -23,6 +23,21 @@ uint32_t s_lastWeather = 0;
 uint32_t s_manualWindowUntil = 0;
 uint32_t s_lastNtpAttempt = 0;
 
+// Some ESP32-C3 boards cannot associate at full transmit power (clock/RF
+// mismatch, brown-outs during the TX burst). Capping the radio at 11 dBm makes
+// them join reliably and still reaches a router in the same room.
+constexpr wifi_power_t kTxPower = WIFI_POWER_11dBm;
+
+void staMode() {
+  WiFi.mode(WIFI_STA);
+  WiFi.setTxPower(kTxPower);
+}
+
+void joinNetwork() {
+  WiFi.begin(gState.wifiSsid, gState.wifiPassword);
+  WiFi.setTxPower(kTxPower);  // applied again after the driver starts
+}
+
 bool wifiSettingOn() { return (gState.settings.flags & 0x04) != 0; }
 
 void publishState(uint8_t state) {
@@ -188,9 +203,9 @@ void toggle() {
     s_manualWindowUntil = millis() + 300000;
     s_wantConnect = gState.wifiConfigured;
     s_connectStarted = millis();
-    WiFi.mode(WIFI_STA);
+    staMode();
     if (gState.wifiConfigured) {
-      WiFi.begin(gState.wifiSsid, gState.wifiPassword);
+      joinNetwork();
       publishState(1);
       stateSetToast("Wi-Fi: ON (Connecting)", 2500);
     } else {
@@ -242,7 +257,7 @@ void loop() {
     if (!allowed) {
       publishState(0);
     } else {
-      WiFi.mode(WIFI_STA);
+      staMode();
       WiFi.disconnect(false, false);
       esp_task_wdt_reset();
       const int found = WiFi.scanNetworks();
@@ -273,8 +288,8 @@ void loop() {
     if (WiFi.status() != WL_CONNECTED) {
       if (gState.wifiState == 2) publishState(0);
       if (gState.wifiState != 1) {
-        WiFi.mode(WIFI_STA);
-        WiFi.begin(gState.wifiSsid, gState.wifiPassword);
+        staMode();
+        joinNetwork();
         publishState(1);
         s_connectStarted = now;
       }

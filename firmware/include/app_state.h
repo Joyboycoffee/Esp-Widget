@@ -51,6 +51,9 @@ struct RuntimeState {
   uint32_t toastUntil = 0;
   uint8_t touchCount = 0;
   uint32_t pageSaveAt = 0;
+  volatile bool wakeRequested = false;   // phone asked the screen to wake
+  volatile bool sleepRequested = false;  // phone asked for deep sleep
+  uint32_t sleepAt = 0;
   volatile bool statusDirty = false;  // push a Status frame to the phone soon  // millis() at which to persist current_page (0 = nothing pending)
 };
 

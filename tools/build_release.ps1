@@ -104,13 +104,18 @@ if (-not $major) { $major = "1" }
 if (-not $minor) { $minor = "0" }
 if (-not $patch) { $patch = "0" }
 $Version = "$major.$minor.$patch"
+$VersionHeader = Get-Content (Join-Path $FirmwareDir "include\version.h") -Raw
+$Build = [regex]::Match($VersionHeader, "ESPW_BUILD\s+(\d+)").Groups[1].Value
+if (-not $Build) { $Build = "0" }
+$FwName = "ESP Widget Keychain"
+$FwFile = "esp-widget-keychain-$Version-build$Build-full.bin"
 $BuiltUtc = (Get-Date).ToUniversalTime().ToString(
     "yyyy-MM-dd'T'HH':'mm':'ss'Z'",
     [System.Globalization.CultureInfo]::InvariantCulture
 )
 
 Write-Host ""
-Write-Host "ESP Widget release $Version" -ForegroundColor Yellow
+Write-Host "$FwName $Version (build $Build)" -ForegroundColor Yellow
 Write-Host "Output: $ReleaseDir"
 
 # ----------------------------------------------------------------- firmware
@@ -134,7 +139,7 @@ foreach ($file in @($Boot, $Parts, $App)) {
 }
 
 Step "Merging factory image"
-$Full = Join-Path $FwOut "esp-widget-$Version-full.bin"
+$Full = Join-Path $FwOut $FwFile
 & $Py -m esptool --chip esp32c3 merge_bin -o $Full --flash_mode dio --flash_freq 80m --flash_size 4MB `
     0x0 $Boot 0x8000 $Parts 0x10000 $App
 Require-Exit "Could not merge the firmware image"
@@ -146,8 +151,9 @@ Copy-Item $App (Join-Path $FwOut "firmware.bin") -Force
 $Size = (Get-Item $Full).Length
 $Hash = (Get-FileHash -Algorithm SHA256 $Full).Hash.ToLower()
 $manifest = [ordered]@{
-    name = "ESP Widget"
+    name = $FwName
     version = $Version
+    build = [int]$Build
     built_utc = $BuiltUtc
     chip = "esp32c3"
     flash_mode = "dio"
@@ -289,7 +295,7 @@ Step "Writing release metadata and checksums"
 $buildInfo = @"
 ESP Widget $Version
 Built: $BuiltUtc
-Firmware: esp-widget-$Version-full.bin
+Firmware: $FwFile
 Chip: ESP32-C3, 4 MB flash
 
 Flash with:

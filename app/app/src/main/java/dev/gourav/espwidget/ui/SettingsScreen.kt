@@ -175,6 +175,34 @@ fun SettingsScreen(state: AppState, onRequestPermissions: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(12.dp))
+                Text("Theme", style = MaterialTheme.typography.bodyMedium, color = Muted)
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0 to "System", 1 to "Light", 2 to "Dark").forEach { (mode, label) ->
+                        val selected = settings.themeMode == mode
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(if (selected) Ink else Paper, RoundedCornerShape(12.dp))
+                                .clickable { AppGraph.repository.setSettings(settings.copy(themeMode = mode)) }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                label,
+                                color = if (selected) CardWhite else Ink,
+                                fontSize = 12.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        }
+                    }
+                }
+                Text(
+                    "The widget switches to the same theme.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Muted,
+                )
+                Spacer(Modifier.height(12.dp))
                 ToggleRow("24-hour clock", "Show 21:04 instead of 9:04 PM", !settings.twelveHour) {
                     AppGraph.repository.setSettings(settings.copy(twelveHour = !it))
                 }
@@ -388,7 +416,7 @@ fun SettingsScreen(state: AppState, onRequestPermissions: () -> Unit) {
         }
         item {
             Column(modifier = Modifier.padding(bottom = 18.dp)) {
-                Text("ESP Widget 1.1", style = MaterialTheme.typography.labelSmall)
+                Text("ESP Widget 1.2", style = MaterialTheme.typography.labelSmall)
                 Text(
                     "Protocol v1 · 240 × 240 · ESP32-C3",
                     style = MaterialTheme.typography.bodyMedium,

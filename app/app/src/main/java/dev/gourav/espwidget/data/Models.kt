@@ -50,6 +50,10 @@ data class SettingsModel(
     val wifiEnabled: Boolean = true,
     val showSeconds: Boolean = false,
     val currentPage: Int = 0,
+    /** 0 = follow the phone, 1 = light, 2 = dark. The widget follows the resolved value. */
+    val themeMode: Int = 0,
+    /** Use the whole widget display for the stock watchlist. */
+    val stocksMode: Boolean = false,
 )
 
 @Serializable

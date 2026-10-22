@@ -301,8 +301,26 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
       if (s_photoOpen) {
         s_photo.close();
         s_photoOpen = false;
-        gState.photoReady = LittleFS.exists("/photo.jpg");
-        stateSetToast("Photo updated");
+        // A photo with missing or garbled chunks decodes into wrong colours, so
+        // check size and JPEG markers before accepting it.
+        bool good = false;
+        File f = LittleFS.open("/photo.jpg", "r");
+        if (f && f.size() == s_photoTotal && s_photoWritten == s_photoTotal && s_photoTotal > 4) {
+          uint8_t head[2] = {0, 0}, tail[2] = {0, 0};
+          f.read(head, 2);
+          f.seek(f.size() - 2);
+          f.read(tail, 2);
+          good = head[0] == 0xFF && head[1] == 0xD8 && tail[0] == 0xFF && tail[1] == 0xD9;
+        }
+        if (f) f.close();
+        if (good) {
+          gState.photoReady = true;
+          stateSetToast("Photo updated");
+        } else {
+          LittleFS.remove("/photo.jpg");
+          gState.photoReady = false;
+          stateSetToast("Photo failed - resend");
+        }
         gState.dirty = true;
       }
       break;
@@ -314,6 +332,17 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
       break;
     case espw::MsgType::TimeReq:
       sendTime();
+      break;
+    case espw::MsgType::Command:
+      if (len >= 1) {
+        // Acted on by loop() after the ACK has gone out.
+        if (payload[0] == espw::CmdWakeScreen) {
+          gState.wakeRequested = true;
+        } else if (payload[0] == espw::CmdDeepSleep) {
+          gState.sleepRequested = true;
+          gState.sleepAt = millis() + 600;
+        } else applied = false;
+      } else applied = false;
       break;
     case espw::MsgType::FactoryReset:
       if (len >= sizeof(espw::FactoryResetPayload)) {

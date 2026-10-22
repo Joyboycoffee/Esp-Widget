@@ -342,9 +342,20 @@ class SyncEngine(
             celsius = s.celsius,
             wifiEnabled = s.wifiEnabled,
             showSeconds = s.showSeconds,
+            darkTheme = resolveDark(s.themeMode),
+            stocksMode = s.stocksMode,
             // Ignored by firmware 1.1+: the widget owns which page is showing.
             currentPage = 0,
         )
+
+    /** Light / dark / follow-the-phone, resolved to what the widget should show. */
+    private fun resolveDark(mode: Int): Boolean = when (mode) {
+        1 -> false
+        2 -> true
+        else -> (context.resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+    }
 
     private fun sendSettings(s: dev.gourav.espwidget.data.SettingsModel) {
         ble.send(Msg.SETTINGS, settingsPayload(s).encode())
@@ -419,7 +430,7 @@ class SyncEngine(
 
     fun refreshStocks(force: Boolean) {
         val state = repo.persisted.value
-        val interval = state.sources.stockMinutes.coerceIn(5, 240) * 60_000L
+        val interval = state.sources.stockMinutes.coerceIn(1, 240) * 60_000L
         val now = System.currentTimeMillis()
         if (!force && now - lastStockFetch < interval) return
         if (state.sources.stockSymbols.none { it.isNotBlank() }) return
@@ -498,6 +509,18 @@ class SyncEngine(
         repo.update { it.copy(sources = it.sources.copy(wifiSsid = "")) }
         repo.log("Wi-Fi network forgotten")
         ble.send(Msg.STATUS_REQ)
+    }
+
+    /** Turn the widget's screen on (it must be connected over Bluetooth). */
+    fun wakeWidgetScreen() {
+        ble.send(Msg.COMMAND, byteArrayOf(1, 0, 0, 0))
+        repo.log("Wake screen requested")
+    }
+
+    /** Radios and screen off; only the widget's own button wakes it again. */
+    fun deepSleepWidget() {
+        ble.send(Msg.COMMAND, byteArrayOf(2, 0, 0, 0))
+        repo.log("Deep sleep requested")
     }
 
     fun factoryReset() {

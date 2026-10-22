@@ -164,5 +164,6 @@ object Msg {
     const val STATUS_REQ = 0x34
     const val STATUS = 0x35
     const val FACTORY_RESET = 0x36
+    const val COMMAND = 0x38
     const val TIME_REQ = 0x37
 }
