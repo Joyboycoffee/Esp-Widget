@@ -296,15 +296,20 @@ void drawWeather(const Rect& r, uint16_t accent, bool hero) {
 }
 
 void drawBattery(const Rect& r, uint16_t accent, bool hero) {
+  // No valid cell reading (e.g. running from USB with the cell disconnected).
+  const bool known = gState.battery.millivolts > 0 || gState.chargeFull;
   char pct[8];
-  snprintf(pct, sizeof(pct), "%d%%", gState.battery.percent);
+  if (known) snprintf(pct, sizeof(pct), "%d%%", gState.battery.percent);
+  else strlcpy(pct, "--", sizeof(pct));
   char volts[20];
-  snprintf(volts, sizeof(volts), "%.2f V", gState.battery.millivolts / 1000.0f);
+  if (known) snprintf(volts, sizeof(volts), "%.2f V", gState.battery.millivolts / 1000.0f);
+  else strlcpy(volts, gState.usbPower ? "No cell reading" : "Measuring...", sizeof(volts));
   const int level = constrain(static_cast<int>(gState.battery.percent), 0, 100);
   const uint16_t statusColor = gState.charging || gState.chargeFull ? C_GOOD
                                  : gState.usbPower ? C_SKY : C_MUTED;
-  const char* statusStr = gState.chargeFull ? "Full" : gState.charging ? "Charging" :
-                          gState.usbPower ? "Docked" : "On battery";
+  const char* statusStr = gState.chargeFull ? "Full"
+                          : (gState.charging && known) ? "Charging"
+                          : gState.usbPower ? "USB power" : "On battery";
   if (hero) {
     cv->setFont(&Fredoka44);
     cv->setTextColor(C_INK, C_CARD);
@@ -691,8 +696,10 @@ void header() {
                              : pct > 50 ? C_GOOD : pct > 20 ? C_SUN : C_DANGER;
 
   // Right cluster, laid out right-to-left from the margin.
+  const bool known = gState.battery.millivolts > 0 || gState.chargeFull;
   char battery[8];
-  snprintf(battery, sizeof(battery), "%d%%", pct);
+  if (known) snprintf(battery, sizeof(battery), "%d%%", pct);
+  else strlcpy(battery, gState.usbPower ? "USB" : "--", sizeof(battery));
   cv->setFont(&Fredoka12);
   const int pctW = cv->textWidth(battery);
   int x = SCREEN_W - UI_MARGIN - pctW;
@@ -820,6 +827,10 @@ void drawPairing() {
 void renderBand(int y, int h, bool headerOnly) {
   if (h <= 0) return;
   if (s_bandOk) {
+    // pushSprite() sends the buffer by DMA in the background. Drawing the next
+    // band into it before that finishes corrupted the screen (cards from one
+    // row appearing on top of another), so wait for the transfer first.
+    tft.waitDMA();
     cv = &s_band;
     s_oy = y;
     s_band.fillRect(0, 0, SCREEN_W, h, C_BG);
@@ -848,6 +859,7 @@ void renderBand(int y, int h, bool headerOnly) {
   if (s_bandOk) {
     tft.setClipRect(0, y, SCREEN_W, h);
     s_band.pushSprite(&tft, 0, y);
+    tft.waitDMA();
   }
   tft.clearClipRect();
   cv = &tft;

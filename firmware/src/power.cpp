@@ -144,8 +144,9 @@ void update() {
   }
   if (voltageValid) millivolts = static_cast<uint16_t>(vbat * 1000.0f);
 
+  // Without a valid cell voltage we cannot tell, so don't claim "charging".
   const bool charging = charger.charging ||
-                        (usb && !charger.full && !charger.wired && millivolts < 4150);
+                        (usb && voltageValid && !charger.full && !charger.wired && millivolts < 4150);
   const bool full = charger.full || (usb && !charging && percent >= 100);
 
   // Require at least a 30mV change or a percent change to mark dirty.
