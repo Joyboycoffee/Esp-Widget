@@ -236,9 +236,22 @@ void enterDeepSleep() {
   NimBLEDevice::deinit(true);
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
-  displaySleepHold();
+
+  // The button wakes the chip by going HIGH. If its pin floats while asleep
+  // (internal pull-downs are dropped in deep sleep unless held) the chip wakes
+  // again straight away. So: wait until the button is released, then latch the
+  // pull-down so the pin stays firmly LOW until it is really pressed.
+  const gpio_num_t touch = static_cast<gpio_num_t>(PIN_TOUCH);
   pinMode(PIN_TOUCH, INPUT_PULLDOWN);
+  const uint32_t t0 = millis();
+  while (digitalRead(PIN_TOUCH) == TOUCH_ACTIVE_LEVEL && millis() - t0 < 4000) delay(10);
+  delay(150);
+  gpio_pullup_dis(touch);
+  gpio_pulldown_en(touch);
+  gpio_hold_en(touch);
   esp_deep_sleep_enable_gpio_wakeup(1ULL << PIN_TOUCH, ESP_GPIO_WAKEUP_GPIO_HIGH);
+
+  displaySleepHold();  // backlight/reset/DC latched off; also enables the global deep-sleep hold
   delay(80);
   esp_deep_sleep_start();
 }

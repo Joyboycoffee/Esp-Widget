@@ -12,6 +12,7 @@ void displayBegin() {
   // Deep sleep latches the backlight/reset/DC pins. Release them before the
   // panel is initialised, otherwise the backlight stays stuck after waking.
   gpio_deep_sleep_hold_dis();
+  gpio_hold_dis(static_cast<gpio_num_t>(PIN_TOUCH));
   gpio_hold_dis(static_cast<gpio_num_t>(PIN_TFT_BL));
   gpio_hold_dis(static_cast<gpio_num_t>(PIN_TFT_RES));
   gpio_hold_dis(static_cast<gpio_num_t>(PIN_TFT_DC));
