@@ -181,6 +181,17 @@ if (-not $SkipFlasher) {
     & $Py (Join-Path $Root "flasher\make_icon.py") | Out-Null
     Require-Exit "Could not generate the flasher icon"
 
+    # A flasher window that is still open (or antivirus scanning the old exe)
+    # makes Windows refuse to overwrite it. Close it and clear the old file first.
+    Get-Process -Name "ESPWidgetFlasher" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    $OldExe = Join-Path $DesktopOut "ESPWidgetFlasher.exe"
+    for ($try = 1; $try -le 10 -and (Test-Path $OldExe); $try++) {
+        try { Remove-Item $OldExe -Force -ErrorAction Stop } catch { Start-Sleep -Seconds 1 }
+    }
+    if (Test-Path $OldExe) {
+        Fail "Cannot replace $OldExe. Close any open ESP Widget Flasher window and retry (or add the release folder to your antivirus exclusions)."
+    }
+
     & $Py -m PyInstaller --clean --noconfirm --distpath $DesktopOut `
         --workpath (Join-Path $Root "flasher\build") `
         (Join-Path $Root "flasher\ESPWidgetFlasher.spec") --log-level WARN
