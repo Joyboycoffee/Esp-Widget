@@ -4,7 +4,6 @@
   portable Windows flasher, and SHA-256 checksums.
 
 .EXAMPLE
-  cd "C:\Users\Gourav\Documents\Random Projects\Esp Widget"
   powershell -ExecutionPolicy Bypass -File .\tools\build_release.ps1
 
   Add -SkipAndroid or -SkipFlasher when iterating on one piece.
@@ -247,7 +246,7 @@ if (-not $SkipAndroid) {
         & (Join-Path $Jdk "bin\keytool.exe") -genkeypair -v `
             -keystore $Keystore -storetype JKS -keyalg RSA -keysize 2048 -validity 10000 `
             -alias espwidget -storepass $password -keypass $password `
-            -dname "CN=ESP Widget, OU=Personal, O=Gourav, L=India, ST=India, C=IN" | Out-Null
+            -dname "CN=ESP Widget, OU=OpenSource, O=EspWidget, L=City, ST=State, C=US" | Out-Null
         Require-Exit "Could not generate the release keystore"
         Write-Utf8 $KeystoreProps (
             "storeFile=keystore/espwidget-release.jks`n" +

@@ -13,6 +13,6 @@
   "esptool": "4.7.0",
   "pyserial": "3.5",
   "tkinter": "8.6",
-  "icon": "C:\\Users\\Gourav\\AppData\\Local\\Temp\\_MEI282042\\resources\\app.ico",
+  "icon": "resources/app.ico",
   "errors": []
 }

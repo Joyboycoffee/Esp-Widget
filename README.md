@@ -109,7 +109,6 @@ manual build commands.
 From the repository root:
 
 ```powershell
-cd "C:\Users\Gourav\Documents\Random Projects\Esp Widget"
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_release.ps1
 ```
 

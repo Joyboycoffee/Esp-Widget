@@ -6,7 +6,7 @@ merged firmware image; no Python or PlatformIO is needed on the target PC.
 ## Run from source
 
 ```powershell
-cd "C:\Users\Gourav\Documents\Random Projects\Esp Widget"
+# From the repository root
 .\.flasher-venv\Scripts\python.exe -m pip install -r flasher\requirements.txt
 cd flasher
 ..\.flasher-venv\Scripts\python.exe -m esp_flasher --demo
@@ -17,7 +17,7 @@ cd flasher
 ## Tests
 
 ```powershell
-cd "C:\Users\Gourav\Documents\Random Projects\Esp Widget\flasher"
+cd flasher
 ..\.flasher-venv\Scripts\python.exe -m unittest discover -s tests -v
 ..\.flasher-venv\Scripts\python.exe -m esp_flasher --self-test
 ..\.flasher-venv\Scripts\python.exe -m esp_flasher --smoke-ui
@@ -30,7 +30,7 @@ manifest into `esp_flasher\assets`, regenerates the icon, then runs PyInstaller
 with `ESPWidgetFlasher.spec`. To do just the desktop part:
 
 ```powershell
-cd "C:\Users\Gourav\Documents\Random Projects\Esp Widget"
+# From the repository root
 .\.flasher-venv\Scripts\python.exe -m PyInstaller --clean --noconfirm `
   --distpath release\desktop --workpath flasher\build flasher\ESPWidgetFlasher.spec
 ```

@@ -14,7 +14,7 @@ VSVersionInfo(
       StringTable(
         u'040904B0',
         [
-          StringStruct(u'CompanyName', u'Gourav'),
+          StringStruct(u'CompanyName', u'ESP Widget'),
           StringStruct(u'FileDescription', u'ESP Widget USB Flasher'),
           StringStruct(u'FileVersion', u'1.0.0'),
           StringStruct(u'InternalName', u'ESPWidgetFlasher'),

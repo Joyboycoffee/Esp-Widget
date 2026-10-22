@@ -77,7 +77,6 @@ probe fails with a clear message and nothing is written.
 From the repository root on Windows:
 
 ```powershell
-cd "C:\Users\Gourav\Documents\Random Projects\Esp Widget"
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_release.ps1
 ```
 
@@ -106,7 +105,7 @@ Useful switches:
 Firmware:
 
 ```powershell
-cd "C:\Users\Gourav\Documents\Random Projects\Esp Widget\firmware"
+cd firmware
 & "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe" run
 ```
 
@@ -114,7 +113,7 @@ Merge the factory image (the build environment is created by the release
 script; the command below assumes it exists):
 
 ```powershell
-cd "C:\Users\Gourav\Documents\Random Projects\Esp Widget"
+# From the repository root
 .\.flasher-venv\Scripts\python.exe -m esptool --chip esp32c3 merge_bin `
   -o release\firmware\esp-widget-1.0.0-full.bin `
   --flash_mode dio --flash_freq 80m --flash_size 4MB `
@@ -126,7 +125,7 @@ cd "C:\Users\Gourav\Documents\Random Projects\Esp Widget"
 Signed Android release:
 
 ```powershell
-cd "C:\Users\Gourav\Documents\Random Projects\Esp Widget\app"
+cd app
 $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 .\gradlew.bat :app:assembleRelease
 ```
@@ -140,7 +139,7 @@ release APK because the two use different signing keys.
 Portable flasher:
 
 ```powershell
-cd "C:\Users\Gourav\Documents\Random Projects\Esp Widget"
+# From the repository root
 .\.flasher-venv\Scripts\python.exe -m PyInstaller --clean --noconfirm `
   --distpath release\desktop --workpath flasher\build `
   flasher\ESPWidgetFlasher.spec
@@ -149,7 +148,7 @@ cd "C:\Users\Gourav\Documents\Random Projects\Esp Widget"
 ### Flasher development
 
 ```powershell
-cd "C:\Users\Gourav\Documents\Random Projects\Esp Widget\flasher"
+cd flasher
 ..\.flasher-venv\Scripts\python.exe -m unittest discover -s tests -v
 ..\.flasher-venv\Scripts\python.exe -m esp_flasher --demo
 ..\.flasher-venv\Scripts\python.exe -m esp_flasher --list
