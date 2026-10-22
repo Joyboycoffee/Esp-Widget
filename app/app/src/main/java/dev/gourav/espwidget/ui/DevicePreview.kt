@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import dev.gourav.espwidget.data.AppState
 import dev.gourav.espwidget.data.PageModel
 import dev.gourav.espwidget.data.SlotModel
+import dev.gourav.espwidget.data.StockModel
 import dev.gourav.espwidget.data.accentColor
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -71,12 +72,18 @@ fun DevicePreview(
     modifier: Modifier = Modifier,
     controlledPage: Int? = null,
     onPageChange: (Int) -> Unit = {},
+    showStocksMode: Boolean = true,
 ) {
     val pages = state.persisted.layout.pages
+    val stocksMode = showStocksMode && state.persisted.settings.stocksMode
+    val validStocks = state.persisted.stocks.filter { it.valid }
+    // Mirrors the widget: in full-screen stocks mode there is one overview page
+    // (when 2+ stocks) followed by one page per stock.
+    val count = if (stocksMode) (if (validStocks.size >= 2) validStocks.size + 1 else 1) else pages.size
     var selected by rememberSaveable { mutableIntStateOf(state.persisted.settings.currentPage) }
-    val page = (controlledPage ?: selected).coerceIn(0, (pages.size - 1).coerceAtLeast(0))
-    LaunchedEffect(pages.size) {
-        if (selected >= pages.size) {
+    val page = (controlledPage ?: selected).coerceIn(0, (count - 1).coerceAtLeast(0))
+    LaunchedEffect(count) {
+        if (selected >= count) {
             selected = 0
             onPageChange(0)
         }
@@ -87,15 +94,15 @@ fun DevicePreview(
             color = Color(0xFFEAE2D8),
             shadowElevation = 12.dp,
             modifier = Modifier.padding(6.dp)
-                        .pointerInput(pages.size, page) {
+                        .pointerInput(count, page) {
                             // Swipe the preview to flip the page here and on the widget.
                             var total = 0f
                             detectHorizontalDragGestures(
                                 onDragStart = { total = 0f },
                                 onDragEnd = {
-                                    if (kotlin.math.abs(total) > 40f && pages.size > 1) {
+                                    if (kotlin.math.abs(total) > 40f && count > 1) {
                                         val next = if (total < 0) page + 1 else page - 1
-                                        val wrapped = (next % pages.size + pages.size) % pages.size
+                                        val wrapped = (next % count + count) % count
                                         selected = wrapped
                                         onPageChange(wrapped)
                                     }
@@ -118,10 +125,12 @@ fun DevicePreview(
                         .padding(9.dp),
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        PreviewHeader(state, page, pages.size)
+                        PreviewHeader(state, page, count)
                         Spacer(Modifier.height(4.dp))
                         val config = pages.getOrNull(page) ?: PageModel()
-                        if (config.template == 1) {
+                        if (stocksMode) {
+                            StocksPreview(validStocks, page)
+                        } else if (config.template == 1) {
                             val w = (222.dp - 6.dp) / 2
                             val h = (222.dp - 22.dp - 6.dp) / 2
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -166,7 +175,7 @@ fun DevicePreview(
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    pages.indices.forEach { index ->
+                    (0 until count).forEach { index ->
                         Box(
                             modifier = Modifier
                                 .size(if (index == page) 18.dp else 8.dp, 8.dp)
@@ -618,3 +627,59 @@ private fun weatherIcon(code: Int) = when (code) {
 
 private fun money(cents: Int, currency: Int): String =
     if (currency == 0) "₹${"%.2f".format(cents / 100.0)}" else "$" + "%.2f".format(cents / 100.0)
+
+
+/** Full-screen stocks mode: overview rows (2+ stocks) or one big stock per page. */
+@Composable
+private fun StocksPreview(stocks: List<StockModel>, page: Int) {
+    val shape = RoundedCornerShape(14.dp)
+    if (stocks.isEmpty()) {
+        Box(Modifier.fillMaxWidth().height(190.dp).clip(shape).background(CardWhite).border(1.dp, Line, shape), contentAlignment = Alignment.Center) {
+            Text("No stocks yet", fontSize = 11.sp, color = Muted)
+        }
+        return
+    }
+    if (stocks.size >= 2 && page == 0) {
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            stocks.forEach { stock ->
+                val trend = if (stock.changeBp >= 0) Good else Bad
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().height(if (stocks.size > 4) 28.dp else 36.dp)
+                        .clip(RoundedCornerShape(10.dp)).background(CardWhite).border(1.dp, Line, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 8.dp),
+                ) {
+                    Text(stock.symbol, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f), maxLines = 1)
+                    Sparkline(stock.spark, trend, Modifier.width(34.dp).height(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(money(stock.priceCents, stock.currency), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Ink)
+                        Text("${"%+.2f".format(stock.changeBp / 100.0)}%", fontSize = 7.sp, color = trend)
+                    }
+                }
+            }
+        }
+        return
+    }
+    val stock = stocks[(if (stocks.size >= 2) page - 1 else 0).coerceIn(0, stocks.lastIndex)]
+    val trend = if (stock.changeBp >= 0) Good else Bad
+    Column(
+        modifier = Modifier.fillMaxWidth().height(190.dp).clip(shape).background(CardWhite)
+            .border(1.dp, Line, shape).padding(12.dp),
+    ) {
+        Row(Modifier.fillMaxWidth()) {
+            Text(stock.symbol, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
+            Text(if (stock.market == 1) "Market open" else "Market closed", fontSize = 8.sp, color = Muted)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(money(stock.priceCents, stock.currency), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Ink)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "${"%+.2f".format(stock.changeBp / 100.0)}%",
+            fontSize = 11.sp, fontWeight = FontWeight.Bold, color = CardWhite,
+            modifier = Modifier.clip(RoundedCornerShape(50)).background(trend).padding(horizontal = 10.dp, vertical = 3.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+        Sparkline(stock.spark, trend, Modifier.fillMaxWidth().height(50.dp))
+    }
+}
