@@ -59,14 +59,11 @@ class LGFX_ST7789 : public lgfx::LGFX_Device {
     setPanel(&_panel_instance);
   }
 
-  // Re-send the panel set-up. soft = no reset pulse and no screen clear: on a
-  // healthy panel nothing visible changes, on one that browned out it restores
-  // the settings (the caller then repaints). hard = full reset + clear.
-  // The backlight PWM is never touched, so the screen never blinks dark.
-  void reinitPanel(bool hard) {
+  // Full reset + re-init of the panel controller (5-tap escape hatch only).
+  // The backlight PWM is left alone.
+  void reinitPanelHard() {
     _panel_instance.setLight(nullptr);
-    if (hard) init();
-    else init_without_reset(false);
+    init();
     _panel_instance.setLight(&_light_instance);
   }
 };
@@ -75,6 +72,7 @@ extern LGFX_ST7789 tft;
 
 void displayBegin();
 void displayReinit(bool hard = false);
+void displayHeal();
 void displayFadeIn(uint8_t target);
 void displayFadeOut(uint8_t from);
 void displaySleepHold();

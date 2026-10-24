@@ -156,7 +156,11 @@ void update() {
   static uint8_t s_usbDebounceCount = 0;
   static bool s_usbInitialized = false;
   if (!s_usbInitialized) {
-    s_debouncedUsb = rawUsb;
+    // Right after boot the ADC and the charger-LED pins are not settled yet and
+    // used to report "charging" on battery, which started Wi-Fi on battery and
+    // then froze on the switch back. Only a USB host is trusted immediately;
+    // anything else has to pass the normal 3-sample debounce first.
+    s_debouncedUsb = host;
     s_usbInitialized = true;
   } else if (rawUsb != s_debouncedUsb) {
     // Three agreeing samples (~6 s) before we believe a dock/undock. A single

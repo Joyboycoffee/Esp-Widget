@@ -186,8 +186,12 @@ void stop() {
   s_scanRequested = false;
   s_weatherRequested = false;
   s_manualWindowUntil = 0;
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
+  if (WiFi.getMode() != WIFI_OFF) {
+    esp_task_wdt_reset();
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    esp_task_wdt_reset();
+  }
   publishState(0);
 }
 

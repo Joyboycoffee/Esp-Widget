@@ -1,6 +1,6 @@
 ESP Widget 2.0.6
-Built: 2026-10-24T08:42:23Z
-Firmware: esp-widget-keychain-2.0.6-build44-full.bin
+Built: 2026-10-24T08:54:17Z
+Firmware: esp-widget-keychain-2.0.6-build45-full.bin
 Chip: ESP32-C3, 4 MB flash
 
 Flash with:
