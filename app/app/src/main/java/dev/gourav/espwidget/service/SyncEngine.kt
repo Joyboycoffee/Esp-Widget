@@ -573,6 +573,12 @@ class SyncEngine(
         repo.log("Wake screen requested")
     }
 
+    /** Turn the widget's screen off (a touch or Wake brings it back). */
+    fun screenOffWidget() {
+        ble.send(Msg.COMMAND, byteArrayOf(4, 0, 0, 0))
+        repo.log("Screen off requested")
+    }
+
     /** Radios and screen off; only the widget's own button wakes it again. */
     fun deepSleepWidget() {
         ble.send(Msg.COMMAND, byteArrayOf(2, 0, 0, 0))

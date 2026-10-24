@@ -55,6 +55,10 @@ void handleRemoteCommands() {
     gState.lastActivityMs = millis();
     if (s_screenOff) screenOn();
   }
+  if (gState.screenOffRequested) {
+    gState.screenOffRequested = false;
+    screenOff();
+  }
   if (gState.pageRequested >= 0) {
     const int page = gState.pageRequested;
     gState.pageRequested = -1;
@@ -256,7 +260,7 @@ void loop() {
       gState.dirty = true;
     }
 
-    const uint32_t interval = uiNeedsSecondTick() ? 1000 : 30000;
+    const uint32_t interval = uiNeedsAnimTick() ? 450 : (uiNeedsSecondTick() ? 1000 : 30000);
     if (gState.dirty || now - s_lastRender >= interval) {
       s_lastRender = now;
       s_lastHeader = now;

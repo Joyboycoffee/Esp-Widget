@@ -339,6 +339,8 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
         // Acted on by loop() after the ACK has gone out.
         if (payload[0] == espw::CmdWakeScreen) {
           gState.wakeRequested = true;
+        } else if (payload[0] == espw::CmdScreenOff) {
+          gState.screenOffRequested = true;
         } else if (payload[0] == espw::CmdSetPage) {
           gState.pageRequested = len >= 2 ? static_cast<int8_t>(payload[1]) : -1;
           gState.wakeRequested = true;

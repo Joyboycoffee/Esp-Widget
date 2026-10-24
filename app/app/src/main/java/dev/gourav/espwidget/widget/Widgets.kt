@@ -30,6 +30,7 @@ import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
+import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -141,21 +142,17 @@ private fun Dashboard(state: AppState) {
                     Spacer(GlanceModifier.height(8.dp))
                     NotificationTile(p, GlanceModifier.fillMaxWidth())
                     Spacer(GlanceModifier.height(8.dp))
-                    Watchlist(p, rows = 3)
+                    Watchlist(p, rows = 2)
+                    Spacer(GlanceModifier.height(8.dp))
+                    PageBar(state)
                 } else {
                     Spacer(GlanceModifier.defaultWeight())
-                    Watchlist(p, rows = 1)
+                    PageBar(state)
                 }
             } else {
                 WeatherLine(p)
                 Spacer(GlanceModifier.defaultWeight())
-                Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    DeviceLine(state)
-                    Spacer(GlanceModifier.defaultWeight())
-                    ArrowButton("‹", -1)
-                    Spacer(GlanceModifier.width(4.dp))
-                    ArrowButton("›", 1)
-                }
+                PageBar(state, 40)
             }
         }
     }
@@ -171,31 +168,27 @@ private fun Header(state: AppState, context: Context, wide: Boolean) {
             ),
         )
         Spacer(GlanceModifier.defaultWeight())
-        if (wide) {
-            PageControls(state)
-            Spacer(GlanceModifier.width(8.dp))
-            StatusPill(state)
-        }
+        if (wide) StatusPill(state)
     }
 }
 
 @Composable
-private fun ArrowButton(label: String, delta: Int) {
+private fun BigArrow(label: String, delta: Int, modifier: GlanceModifier) {
     Box(
-        modifier = GlanceModifier
-            .size(30.dp)
-            .background(c(card))
-            .cornerRadius(15.dp)
+        modifier = modifier
+            .fillMaxHeight()
+            .background(c(sage.copy(alpha = 0.45f)))
+            .cornerRadius(16.dp)
             .clickable(actionRunCallback<StepPageAction>(actionParametersOf(DeltaKey to delta))),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = TextStyle(color = c(ink), fontSize = 16.sp, fontWeight = FontWeight.Bold))
+        Text(label, style = TextStyle(color = c(ink), fontSize = 26.sp, fontWeight = FontWeight.Bold))
     }
 }
 
-/** ‹ 2/5 › : changes what the ESP display is showing. */
+/** Full-width bar with two big tap targets: [ ‹ ]  2/5  [ › ] changes what the ESP shows. */
 @Composable
-private fun PageControls(state: AppState) {
+private fun PageBar(state: AppState, height: Int = 46) {
     val p = state.persisted
     val count = if (p.settings.stocksMode) {
         p.stocks.count { it.valid }.let { if (it >= 2) it + 1 else 1 }
@@ -203,12 +196,17 @@ private fun PageControls(state: AppState) {
         p.layout.pages.size.coerceAtLeast(1)
     }
     val page = ((state.link.status?.page ?: p.settings.currentPage).coerceIn(0, count - 1)) + 1
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        ArrowButton("‹", -1)
-        Spacer(GlanceModifier.width(4.dp))
-        Text("$page/$count", style = TextStyle(color = c(muted), fontSize = 11.sp, fontWeight = FontWeight.Medium))
-        Spacer(GlanceModifier.width(4.dp))
-        ArrowButton("›", 1)
+    Row(
+        modifier = GlanceModifier.fillMaxWidth().height(height.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BigArrow("‹", -1, GlanceModifier.defaultWeight())
+        Text(
+            "$page/$count",
+            style = TextStyle(color = c(muted), fontSize = 12.sp, fontWeight = FontWeight.Medium),
+            modifier = GlanceModifier.padding(horizontal = 10.dp),
+        )
+        BigArrow("›", 1, GlanceModifier.defaultWeight())
     }
 }
 

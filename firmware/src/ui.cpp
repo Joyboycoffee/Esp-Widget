@@ -316,22 +316,25 @@ void drawPhoneBattery(const Rect& r, uint16_t accent, bool hero) {
   else strlcpy(pct, "--", sizeof(pct));
   const char* label = !known ? "Waiting for phone" : charging ? "Phone charging" : "Phone";
   const uint16_t color = charging ? C_GOOD : (known && level <= 20) ? C_DANGER : accent;
+  // While the phone charges, the battery fills up from its real level to full
+  // in steps, then starts over.
+  const int shown = charging ? level + (100 - level) * static_cast<int>((millis() / 450) % 6) / 5 : level;
   if (hero) {
     cv->setFont(&Fredoka44);
     cv->setTextColor(C_INK, C_CARD);
     cv->drawString(pct, r.x + 18, r.y + 7);
-    icons::battery(*cv, r.x + 132, r.y + 14, 62, 30, level, color);
+    icons::battery(*cv, r.x + 132, r.y + 14, 62, 30, shown, color);
     cv->fillRoundRect(r.x + 18, r.y + 58, r.w - 36, 7, 3, C_LINE);
-    if (level > 0) cv->fillRoundRect(r.x + 18, r.y + 58, (r.w - 36) * level / 100, 7, 3, color);
+    if (shown > 0) cv->fillRoundRect(r.x + 18, r.y + 58, (r.w - 36) * shown / 100, 7, 3, color);
     cv->setFont(&Fredoka16);
     ellipsized(label, r.x + 18, r.y + 70, r.w - 36, charging ? C_GOOD : C_MUTED);
   } else {
     cv->setFont(&Fredoka20);
     cv->setTextColor(C_INK, C_CARD);
     cv->drawString(pct, r.x + 10, r.y + 10);
-    icons::battery(*cv, r.x + r.w - 38, r.y + 12, 28, 14, level, color);
+    icons::battery(*cv, r.x + r.w - 38, r.y + 12, 28, 14, shown, color);
     cv->fillRoundRect(r.x + 10, r.y + 36, r.w - 20, 4, 2, C_LINE);
-    if (level > 0) cv->fillRoundRect(r.x + 10, r.y + 36, (r.w - 20) * level / 100, 4, 2, color);
+    if (shown > 0) cv->fillRoundRect(r.x + 10, r.y + 36, (r.w - 20) * shown / 100, 4, 2, color);
     cv->setFont(&Fredoka12);
     ellipsized(label, r.x + 10, r.y + 48, r.w - 20, charging ? C_GOOD : C_MUTED);
   }
@@ -1124,6 +1127,17 @@ void uiApplyRotation() {
   s_rotation = gState.settings.rotation;
   tft.setRotation(gState.settings.rotation);
   gState.dirty = true;
+}
+
+// True while a charging phone-battery widget is on screen (it animates).
+bool uiNeedsAnimTick() {
+  if (s_diag || stocksMode() || !gState.phoneBatteryValid || !gState.phoneBattery.charging) return false;
+  const auto& cfg = gState.layout.page[stateCurrentPage()];
+  const int count = (cfg.template_id == espw::TemplateGrid) ? 4 : 3;
+  for (int i = 0; i < count; ++i) {
+    if (cfg.slots[i].type == espw::WidgetPhoneBattery) return true;
+  }
+  return false;
 }
 
 bool uiNeedsSecondTick() {

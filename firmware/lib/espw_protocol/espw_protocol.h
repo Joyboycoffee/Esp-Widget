@@ -255,6 +255,7 @@ struct WifiSetPayload {
 enum Command : uint8_t {
   CmdWakeScreen = 1,  // turn the screen on and keep it awake for a while
   CmdDeepSleep = 2,   // radios off, screen off; only the touch button wakes it
+  CmdScreenOff = 4,   // turn the screen off (touch or Wake brings it back)
   CmdSetPage = 3,     // show page reserved[0] (swipe on the phone preview)
 };
 

@@ -54,7 +54,9 @@ class WidgetRepository(private val context: Context, private val scope: Coroutin
         val after = transform(before)
         _link.value = after
         // The home-screen widget shows link + ESP battery; refresh it when those change.
-        if (before.connected != after.connected || before.status?.battery != after.status?.battery) {
+        if (before.connected != after.connected || before.status?.battery != after.status?.battery ||
+            before.status?.page != after.status?.page
+        ) {
             WidgetUpdater.refresh(context)
         }
     }

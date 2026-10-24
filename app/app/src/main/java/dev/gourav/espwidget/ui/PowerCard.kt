@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material3.AlertDialog
@@ -95,12 +96,26 @@ fun WidgetPowerCard(state: AppState) {
                 Spacer(Modifier.width(6.dp))
                 Text("Wake screen", color = Ink)
             }
+            OutlinedButton(
+                onClick = { AppGraph.engine.screenOffWidget() },
+                enabled = connected,
+                shape = RoundedCornerShape(50),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Line),
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.Rounded.DarkMode, null, tint = Ink, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Screen off", color = Ink)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
             Button(
                 onClick = { confirmSleep = true },
                 enabled = connected,
                 shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.buttonColors(containerColor = Ink, contentColor = CardWhite),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Rounded.PowerSettingsNew, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
