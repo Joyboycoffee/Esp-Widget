@@ -130,6 +130,24 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
         }
       } else applied = false;
       break;
+    case espw::MsgType::NextAlarm:
+      if (len >= sizeof(espw::AlarmPayload)) {
+        memcpy(&gState.alarm, payload, sizeof(gState.alarm));
+        gState.alarm.label[sizeof(gState.alarm.label) - 1] = 0;
+        gState.alarmValid = gState.alarm.epoch != 0;
+        gPrefs.putBytes("alarm", &gState.alarm, sizeof(gState.alarm));
+        gState.dirty = true;
+      } else applied = false;
+      break;
+    case espw::MsgType::Countdown:
+      if (len >= sizeof(espw::CountdownPayload)) {
+        memcpy(&gState.countdown, payload, sizeof(gState.countdown));
+        gState.countdown.label[sizeof(gState.countdown.label) - 1] = 0;
+        gState.countdownValid = gState.countdown.target != 0;
+        gPrefs.putBytes("countdown", &gState.countdown, sizeof(gState.countdown));
+        gState.dirty = true;
+      } else applied = false;
+      break;
     case espw::MsgType::PhoneBattery:
       if (len >= sizeof(espw::PhoneBatteryPayload)) {
         memcpy(&gState.phoneBattery, payload, sizeof(espw::PhoneBatteryPayload));

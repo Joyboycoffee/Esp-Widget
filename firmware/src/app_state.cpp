@@ -108,6 +108,14 @@ void stateLoad() {
     gState.weather = weather;
     gState.weatherValid = weather.updated != 0;
   }
+  if (gPrefs.getBytes("alarm", &gState.alarm, sizeof(gState.alarm)) == sizeof(gState.alarm)) {
+    gState.alarm.label[sizeof(gState.alarm.label) - 1] = 0;
+    gState.alarmValid = gState.alarm.epoch != 0;
+  }
+  if (gPrefs.getBytes("countdown", &gState.countdown, sizeof(gState.countdown)) == sizeof(gState.countdown)) {
+    gState.countdown.label[sizeof(gState.countdown.label) - 1] = 0;
+    gState.countdownValid = gState.countdown.target != 0;
+  }
 
   LocationConfig loc{};
   if (gPrefs.getBytes("loc", &loc, sizeof(loc)) == sizeof(loc) && loc.city[0] != 0) {

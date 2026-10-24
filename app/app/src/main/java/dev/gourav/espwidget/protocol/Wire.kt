@@ -149,6 +149,8 @@ object Msg {
     const val TEXT = 0x18
     const val LOCATION = 0x19
     const val PHONE_BATTERY = 0x1A
+    const val NEXT_ALARM = 0x1B
+    const val COUNTDOWN = 0x1C
     const val LAYOUT = 0x20
     const val SETTINGS = 0x21
     const val WIFI_SCAN = 0x22

@@ -54,26 +54,38 @@ int lipoPercent(float v) {
   return max(0, static_cast<int>((v - 3.00f) / 0.40f * 5.0f));
 }
 
-// The stock TP4056 LEDs have their cathodes on GPIO20/21. They are sampled
-// high-impedance and only pulsed low for a few microseconds so the pins never
-// back-feed the charger or make the LEDs glow faintly.
+// The stock TP4056 LEDs have their cathodes on GPIO20/21 (CHRG / STDBY, both
+// open-drain). A lit LED means the chip is actively pulling that pin LOW.
+//
+// The pins are sampled with a brief internal PULL-UP. The old pull-down read
+// was wrong: with the blue LED off, current through the LED into the 45k
+// pull-down left the pin around 2 V, which read as LOW = "blue lit", so the
+// widget claimed "full / 100 %" while it was really charging.
+//   pull-up read 0  -> LED lit (chip sinking it)
+//   pull-up read 1  -> LED off
+// Exactly one LED is lit whenever the TP4056 has input power and a cell.
 ChargerSense sampleCharger() {
-  ChargerSense out{false, false, false, false, 0, 0};
-  gpio_pulldown_en(static_cast<gpio_num_t>(PIN_TP_BLUE));
-  gpio_pulldown_en(static_cast<gpio_num_t>(PIN_TP_RED));
-  delayMicroseconds(30);
-  const int blue = gpio_get_level(static_cast<gpio_num_t>(PIN_TP_BLUE));
-  const int red = gpio_get_level(static_cast<gpio_num_t>(PIN_TP_RED));
-  gpio_pulldown_dis(static_cast<gpio_num_t>(PIN_TP_BLUE));
-  gpio_pulldown_dis(static_cast<gpio_num_t>(PIN_TP_RED));
-
-  // charging: red cathode low, blue high. full: red high, blue low.
-  // docked/powered via TP4056: either LED pin is high (pulled down to 0 when unpowered on battery)
-  out.red = red;
-  out.blue = blue;
-  out.charging = (red == 0 && blue == 1);
-  out.full = (red == 1 && blue == 0);
-  out.docked = (red == 1 || blue == 1);
+  ChargerSense out{false, false, false, false, 1, 1};
+  const auto blueP = static_cast<gpio_num_t>(PIN_TP_BLUE);
+  const auto redP = static_cast<gpio_num_t>(PIN_TP_RED);
+  gpio_pullup_en(blueP);
+  gpio_pullup_en(redP);
+  delayMicroseconds(40);
+  int blue = 0, red = 0;
+  for (int i = 0; i < 4; ++i) {  // majority of 4 reads filters the odd glitch
+    blue += gpio_get_level(blueP);
+    red += gpio_get_level(redP);
+    delayMicroseconds(5);
+  }
+  gpio_pullup_dis(blueP);
+  gpio_pullup_dis(redP);
+  out.blue = blue >= 2 ? 1 : 0;
+  out.red = red >= 2 ? 1 : 0;
+  const bool redLit = out.red == 0;
+  const bool blueLit = out.blue == 0;
+  out.charging = redLit && !blueLit;
+  out.full = blueLit && !redLit;
+  out.docked = redLit != blueLit;  // both "lit" = unpowered chip clamping the pins
   out.wired = out.docked;
   return out;
 }

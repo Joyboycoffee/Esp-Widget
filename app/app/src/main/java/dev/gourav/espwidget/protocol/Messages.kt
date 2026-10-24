@@ -14,7 +14,17 @@ enum class WidgetType(val id: Int, val title: String) {
     STEPS(7, "Steps"),
     TEXT(8, "Note"),
     PHOTO(9, "Photo"),
-    PHONE_BATTERY(10, "Phone battery");
+    PHONE_BATTERY(10, "Phone battery"),
+    ANALOG_CLOCK(11, "Analog clock"),
+    WORLD_CLOCK(12, "World clock"),
+    PROGRESS(13, "Day / year progress"),
+    SUN(14, "Sunrise & sunset"),
+    MOON(15, "Moon phase"),
+    MONTH(16, "Month calendar"),
+    ALARM(17, "Next alarm"),
+    COUNTDOWN(18, "Countdown"),
+    DEVICE(19, "Widget status"),
+    THOUGHT(20, "Thought of the day");
 
     companion object {
         fun from(id: Int): WidgetType? = entries.firstOrNull { it.id == id }
@@ -253,6 +263,14 @@ data class CalendarPayload(
             return CalendarPayload(title, start, allDay, location, updated)
         }
     }
+}
+
+data class AlarmPayload(val epoch: Long, val label: String) {
+    fun encode(): ByteArray = Wire.littleEndian(28).putInt(epoch.toInt()).putFixed(label, 24).array()
+}
+
+data class CountdownPayload(val target: Long, val label: String) {
+    fun encode(): ByteArray = Wire.littleEndian(32).putInt(target.toInt()).putFixed(label, 28).array()
 }
 
 data class PhoneBatteryPayload(val percent: Int, val charging: Boolean, val updated: Long) {

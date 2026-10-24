@@ -16,4 +16,5 @@ void uiRebootSplash();
 void uiSleepSplash();
 bool uiNeedsSecondTick();
 bool uiNeedsAnimTick();
+void uiAnimFrame();
 bool uiHeaderAnimating();

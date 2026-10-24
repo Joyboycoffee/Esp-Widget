@@ -209,12 +209,25 @@ void send(uint8_t type, const void* payload, uint16_t len) {
   }
 }
 
+bool s_lowPower = false;
+
+void setLowPower(bool low) {
+  if (s_lowPower == low) return;
+  s_lowPower = low;
+  s_pendingConnParams = true;
+}
+
 void loop() {
   if (s_pendingConnParams && s_connected && s_server) {
     s_pendingConnParams = false;
-    // 30-50 ms interval, skip up to 4 events when idle, 6 s supervision
-    // timeout: low power but tolerant of the phone going briefly quiet.
-    s_server->updateConnParams(s_connHandle, 24, 40, 4, 600);
+    if (s_lowPower) {
+      // Screen off: 200-300 ms interval, skip up to 2 events, 8 s timeout.
+      // The radio then wakes ~4x a second instead of ~25x; messages still
+      // arrive within a fraction of a second.
+      s_server->updateConnParams(s_connHandle, 160, 240, 2, 800);
+    } else {
+      s_server->updateConnParams(s_connHandle, 24, 40, 4, 600);
+    }
   }
   static uint32_t s_lastStatusPush = 0;
   if (gState.statusDirty && s_connected && !s_pendingHello && millis() - s_lastStatusPush > 500) {

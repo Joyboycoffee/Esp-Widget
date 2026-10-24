@@ -30,6 +30,16 @@ void displayBegin() {
                 static_cast<unsigned long>(ESP.getFreeHeap()));
 }
 
+// Plugging in / unplugging the charger can glitch the panel (a supply dip
+// while the TP4056 switches over), leaving a frozen picture even though the
+// firmware keeps running. Re-initialising the controller recovers it.
+void displayReinit() {
+  tft.setBrightness(0);
+  tft.init();
+  tft.setRotation(gState.settings.rotation);
+  tft.setBrightness(0);
+}
+
 void displayFadeIn(uint8_t target) {
   if (target == 0) return;
   for (int i = 1; i <= 20; ++i) {

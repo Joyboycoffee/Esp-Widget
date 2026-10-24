@@ -15,6 +15,10 @@ struct RuntimeState {
   espw::SettingsPayload settings{};
   espw::BatteryPayload battery{};
   espw::PhoneBatteryPayload phoneBattery{};
+  espw::AlarmPayload alarm{};
+  bool alarmValid = false;
+  espw::CountdownPayload countdown{};
+  bool countdownValid = false;
   bool screenOffRequested = false;
   int8_t pageRequested = -1;  // set by BLE, applied in loop()
   bool phoneBatteryValid = false;

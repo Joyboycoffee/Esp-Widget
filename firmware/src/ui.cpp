@@ -316,25 +316,40 @@ void drawPhoneBattery(const Rect& r, uint16_t accent, bool hero) {
   else strlcpy(pct, "--", sizeof(pct));
   const char* label = !known ? "Waiting for phone" : charging ? "Phone charging" : "Phone";
   const uint16_t color = charging ? C_GOOD : (known && level <= 20) ? C_DANGER : accent;
-  // While the phone charges, the battery fills up from its real level to full
-  // in steps, then starts over.
-  const int shown = charging ? level + (100 - level) * static_cast<int>((millis() / 450) % 6) / 5 : level;
+  // While the phone charges, the fill sweeps smoothly from the real level up
+  // to full, rests there a moment, then starts over. Sub-pixel widths keep it
+  // smooth at high frame rates.
+  float shown = static_cast<float>(level);
+  if (charging) {
+    const float phase = min(1.0f, static_cast<float>(millis() % 2800) / 2000.0f);
+    const float eased = 1.0f - (1.0f - phase) * (1.0f - phase);  // ease-out
+    shown = level + (100 - level) * eased;
+  }
+  auto batteryIcon = [&](int x, int y, int w, int h) {
+    icons::battery(*cv, x, y, w, h, charging ? 0 : level, color);
+    if (charging) {
+      const int inner = static_cast<int>((w - 6) * shown / 100.0f + 0.5f);
+      if (inner > 0) cv->fillRoundRect(x + 3, y + 3, inner, h - 6, 2, color);
+    }
+  };
   if (hero) {
     cv->setFont(&Fredoka44);
     cv->setTextColor(C_INK, C_CARD);
     cv->drawString(pct, r.x + 18, r.y + 7);
-    icons::battery(*cv, r.x + 132, r.y + 14, 62, 30, shown, color);
+    batteryIcon(r.x + 132, r.y + 14, 62, 30);
     cv->fillRoundRect(r.x + 18, r.y + 58, r.w - 36, 7, 3, C_LINE);
-    if (shown > 0) cv->fillRoundRect(r.x + 18, r.y + 58, (r.w - 36) * shown / 100, 7, 3, color);
+    const int barW = static_cast<int>((r.w - 36) * shown / 100.0f + 0.5f);
+    if (barW > 0) cv->fillRoundRect(r.x + 18, r.y + 58, barW, 7, 3, color);
     cv->setFont(&Fredoka16);
     ellipsized(label, r.x + 18, r.y + 70, r.w - 36, charging ? C_GOOD : C_MUTED);
   } else {
     cv->setFont(&Fredoka20);
     cv->setTextColor(C_INK, C_CARD);
     cv->drawString(pct, r.x + 10, r.y + 10);
-    icons::battery(*cv, r.x + r.w - 38, r.y + 12, 28, 14, shown, color);
+    batteryIcon(r.x + r.w - 38, r.y + 12, 28, 14);
     cv->fillRoundRect(r.x + 10, r.y + 36, r.w - 20, 4, 2, C_LINE);
-    if (shown > 0) cv->fillRoundRect(r.x + 10, r.y + 36, (r.w - 20) * shown / 100, 4, 2, color);
+    const int barW = static_cast<int>((r.w - 20) * shown / 100.0f + 0.5f);
+    if (barW > 0) cv->fillRoundRect(r.x + 10, r.y + 36, barW, 4, 2, color);
     cv->setFont(&Fredoka12);
     ellipsized(label, r.x + 10, r.y + 48, r.w - 20, charging ? C_GOOD : C_MUTED);
   }
@@ -719,6 +734,647 @@ void drawPhoto(const Rect& r, uint16_t accent, bool hero) {
   drawCenterTruncated("Send a photo", r.x + r.w / 2, r.y + r.h - (hero ? 30 : 24), r.w - 16, C_MUTED);
 }
 
+// ------------------------------------------------------------ extra widgets --
+// Everything below is computed on the widget itself from the clock and the
+// saved location, except Next alarm and Countdown, which the phone sends.
+
+int64_t daysFromCivil(int y, int m, int d) {
+  y -= m <= 2;
+  const int64_t era = (y >= 0 ? y : y - 399) / 400;
+  const unsigned yoe = static_cast<unsigned>(y - era * 400);
+  const unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+  const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  return era * 146097 + static_cast<int64_t>(doe) - 719468;
+}
+
+int weekdayOf(int64_t days) { return static_cast<int>((days % 7 + 11) % 7); }  // 0 = Sunday
+
+int daysInMonth(int y, int m) {
+  static const uint8_t dim[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  if (m == 2 && ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0)) return 29;
+  return dim[(m - 1) % 12];
+}
+
+// Day of month of the n-th (1-based) Sunday, or the last one when n == 0.
+int sundayOf(int y, int m, int n) {
+  const int firstWd = weekdayOf(daysFromCivil(y, m, 1));
+  const int first = 1 + (7 - firstWd) % 7;
+  if (n > 0) return first + 7 * (n - 1);
+  int d = first;
+  while (d + 7 <= daysInMonth(y, m)) d += 7;
+  return d;
+}
+
+const char* const kMonthNames[] = {"January", "February", "March", "April", "May", "June",
+                                   "July", "August", "September", "October", "November", "December"};
+const char* const kDayShort[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+
+bool clockReady() { return espclock::valid(); }
+
+int32_t localOffsetSec() {
+  return static_cast<int32_t>(espclock::epochLocal()) - static_cast<int32_t>(espclock::epochUtc());
+}
+
+void formatClock(uint32_t localEpoch, char* out, size_t cap) {
+  const int sod = static_cast<int>(localEpoch % 86400UL);
+  const int h = sod / 3600, m = (sod / 60) % 60;
+  if (gState.settings.flags & 0x01) {
+    snprintf(out, cap, "%d:%02d %s", h % 12 == 0 ? 12 : h % 12, m, h < 12 ? "AM" : "PM");
+  } else {
+    snprintf(out, cap, "%02d:%02d", h, m);
+  }
+}
+
+void notReady(const Rect& r, bool hero, const char* text) {
+  cv->setFont(hero ? &Fredoka16 : &Fredoka12);
+  drawCenterTruncated(text, r.x + r.w / 2, r.y + r.h / 2 - 8, r.w - 16, C_MUTED);
+}
+
+// ---- Analog clock -----------------------------------------------------------
+void analogFace(int cx, int cy, int R, uint16_t accent, bool withSeconds) {
+  cv->fillCircle(cx, cy, R, wash(accent, 14));
+  cv->drawCircle(cx, cy, R, C_LINE);
+  for (int i = 0; i < 12; ++i) {
+    const float a = i * PI / 6.0f;
+    const bool major = i % 3 == 0;
+    const float r0 = R - (major ? 7 : 4), r1 = R - 2;
+    cv->drawWideLine(cx + sinf(a) * r0, cy - cosf(a) * r0, cx + sinf(a) * r1, cy - cosf(a) * r1,
+                     major ? 1.2f : 0.6f, major ? C_INK : C_MUTED);
+  }
+  int y, mo, d, h, mi, s, wd;
+  espclock::localTime(y, mo, d, h, mi, s, wd);
+  const float ha = ((h % 12) + mi / 60.0f) * PI / 6.0f;
+  const float ma = (mi + s / 60.0f) * PI / 30.0f;
+  cv->drawWideLine(cx, cy, cx + sinf(ha) * R * 0.52f, cy - cosf(ha) * R * 0.52f, R > 30 ? 2.6f : 1.8f, C_INK);
+  cv->drawWideLine(cx, cy, cx + sinf(ma) * R * 0.78f, cy - cosf(ma) * R * 0.78f, R > 30 ? 1.8f : 1.2f, C_INK);
+  if (withSeconds) {
+    const float sa = s * PI / 30.0f;
+    cv->drawWideLine(cx, cy, cx + sinf(sa) * R * 0.84f, cy - cosf(sa) * R * 0.84f, 0.6f, C_DANGER);
+  }
+  cv->fillCircle(cx, cy, R > 30 ? 4 : 3, accent);
+  cv->fillCircle(cx, cy, 1, C_INK);
+}
+
+void drawAnalog(const Rect& r, uint16_t accent, bool hero) {
+  if (!clockReady()) return notReady(r, hero, "Waiting for time");
+  const bool seconds = (gState.settings.flags & 0x08) != 0;
+  if (hero) {
+    analogFace(r.x + 56, r.y + r.h / 2, r.h / 2 - 8, accent, seconds);
+    char t[20], date[32];
+    espclock::formatTime(t, sizeof(t), (gState.settings.flags & 0x01) != 0, false);
+    espclock::formatDate(date, sizeof(date));
+    cv->setFont(&Fredoka28);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(t, r.x + 112, r.y + 26);
+    cv->setFont(&Fredoka12);
+    ellipsized(date, r.x + 112, r.y + 62, r.w - 124, C_MUTED);
+  } else {
+    const int R = min(r.w, r.h) / 2 - 7;
+    analogFace(r.x + r.w / 2, r.y + r.h / 2, R, accent, seconds);
+  }
+}
+
+// ---- World clock ------------------------------------------------------------
+struct Zone {
+  const char* name;
+  int16_t stdMin;
+  uint8_t dst;  // 0 none, 1 USA, 2 Europe, 3 south-east Australia
+};
+const Zone kZones[] = {
+    {"London", 0, 2},        {"New York", -300, 1}, {"Los Angeles", -480, 1}, {"Chicago", -360, 1},
+    {"Berlin", 60, 2},       {"Paris", 60, 2},      {"Dubai", 240, 0},        {"Singapore", 480, 0},
+    {"Tokyo", 540, 0},       {"Sydney", 600, 3},    {"Hong Kong", 480, 0},    {"Toronto", -300, 1},
+    {"Moscow", 180, 0},      {"Kathmandu", 345, 0}, {"New Delhi", 330, 0},    {"UTC", 0, 0},
+};
+constexpr int kZoneCount = sizeof(kZones) / sizeof(kZones[0]);
+
+uint32_t utcAt(int y, int m, int d, int hour) {
+  return static_cast<uint32_t>(daysFromCivil(y, m, d) * 86400LL + hour * 3600LL);
+}
+
+int zoneOffsetMin(const Zone& z, uint32_t utc) {
+  int y, m, d;
+  {
+    const int64_t days = static_cast<int64_t>(utc / 86400UL);
+    // civil from days (local copy of the clock helper)
+    int64_t zz = days + 719468;
+    const int64_t era = (zz >= 0 ? zz : zz - 146096) / 146097;
+    const unsigned doe = static_cast<unsigned>(zz - era * 146097);
+    const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    y = static_cast<int>(yoe) + static_cast<int>(era) * 400;
+    const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const unsigned mp = (5 * doy + 2) / 153;
+    d = static_cast<int>(doy - (153 * mp + 2) / 5 + 1);
+    m = static_cast<int>(mp < 10 ? mp + 3 : mp - 9);
+    if (m <= 2) y++;
+  }
+  (void)m;
+  (void)d;
+  bool dst = false;
+  if (z.dst == 1) {  // 2nd Sunday March 02:00 local -> 1st Sunday November 02:00 local
+    const uint32_t a = utcAt(y, 3, sundayOf(y, 3, 2), 2) - z.stdMin * 60;
+    const uint32_t b = utcAt(y, 11, sundayOf(y, 11, 1), 2) - (z.stdMin + 60) * 60;
+    dst = utc >= a && utc < b;
+  } else if (z.dst == 2) {  // last Sunday March 01:00 UTC -> last Sunday October 01:00 UTC
+    dst = utc >= utcAt(y, 3, sundayOf(y, 3, 0), 1) && utc < utcAt(y, 10, sundayOf(y, 10, 0), 1);
+  } else if (z.dst == 3) {  // 1st Sunday October 02:00 -> 1st Sunday April 03:00 (southern summer)
+    const uint32_t start = utcAt(y, 10, sundayOf(y, 10, 1), 2) - z.stdMin * 60;
+    const uint32_t end = utcAt(y, 4, sundayOf(y, 4, 1), 3) - (z.stdMin + 60) * 60;
+    dst = utc >= start || utc < end;
+  }
+  return z.stdMin + (dst ? 60 : 0);
+}
+
+void drawWorldClock(const Rect& r, uint16_t accent, bool hero, uint8_t option) {
+  if (!clockReady()) return notReady(r, hero, "Waiting for time");
+  const Zone& z = kZones[option % kZoneCount];
+  const uint32_t utc = espclock::epochUtc();
+  const int offMin = zoneOffsetMin(z, utc);
+  const uint32_t there = utc + offMin * 60;
+  char t[16];
+  formatClock(there, t, sizeof(t));
+  // Difference to local time, and whether it is already tomorrow / still yesterday there.
+  const int diffMin = offMin - localOffsetSec() / 60;
+  const int64_t dayThere = static_cast<int64_t>(there / 86400UL);
+  const int64_t dayHere = static_cast<int64_t>(espclock::epochLocal() / 86400UL);
+  char diff[24];
+  const char* dayTag = dayThere > dayHere ? "Tomorrow" : dayThere < dayHere ? "Yesterday" : "Today";
+  if (diffMin == 0) {
+    snprintf(diff, sizeof(diff), "%s, same time", dayTag);
+  } else if (diffMin % 60 == 0) {
+    snprintf(diff, sizeof(diff), "%s, %+dh", dayTag, diffMin / 60);
+  } else {
+    snprintf(diff, sizeof(diff), "%s, %+d:%02dh", dayTag, diffMin / 60, abs(diffMin % 60));
+  }
+  if (hero) {
+    cv->setFont(&Fredoka16);
+    ellipsized(z.name, r.x + 18, r.y + 12, r.w - 36, C_MUTED);
+    cv->setFont(&Fredoka44);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(t, r.x + 16, r.y + 30);
+    cv->setFont(&Fredoka12);
+    ellipsized(diff, r.x + 18, r.y + 78, r.w - 36, C_MUTED);
+    cv->fillCircle(r.x + r.w - 26, r.y + 22, 6, accent);
+  } else {
+    cv->setFont(&Fredoka12);
+    ellipsized(z.name, r.x + 10, r.y + 10, r.w - 20, C_MUTED);
+    cv->setFont(&Fredoka28);
+    if (cv->textWidth(t) > r.w - 16) cv->setFont(&Fredoka20);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(t, r.x + 10, r.y + 28);
+    char shortDiff[20];
+    const char* tag = dayThere > dayHere ? "Tmrw " : dayThere < dayHere ? "Yday " : "";
+    if (diffMin % 60 == 0) snprintf(shortDiff, sizeof(shortDiff), "%s%+dh", tag, diffMin / 60);
+    else snprintf(shortDiff, sizeof(shortDiff), "%s%+d:%02dh", tag, diffMin / 60, abs(diffMin % 60));
+    cv->setFont(&Fredoka12);
+    ellipsized(shortDiff, r.x + 10, r.y + r.h - 24, r.w - 20, C_MUTED);
+  }
+}
+
+// ---- Progress (day / week / month / year) ---------------------------------
+void drawProgress(const Rect& r, uint16_t accent, bool hero, uint8_t option) {
+  if (!clockReady()) return notReady(r, hero, "Waiting for time");
+  int y, mo, d, h, mi, s, wd;
+  espclock::localTime(y, mo, d, h, mi, s, wd);
+  const uint32_t now = espclock::epochLocal();
+  const int64_t today = static_cast<int64_t>(now / 86400UL);
+  int64_t start = today, end = today + 1;
+  char title[24];
+  const int kind = option % 4;
+  if (kind == 0) {
+    strlcpy(title, "Today", sizeof(title));
+  } else if (kind == 1) {
+    const int mondayBased = (weekdayOf(today) + 6) % 7;
+    start = today - mondayBased;
+    end = start + 7;
+    strlcpy(title, "This week", sizeof(title));
+  } else if (kind == 2) {
+    start = daysFromCivil(y, mo, 1);
+    end = start + daysInMonth(y, mo);
+    strlcpy(title, kMonthNames[(mo - 1) % 12], sizeof(title));
+  } else {
+    start = daysFromCivil(y, 1, 1);
+    end = daysFromCivil(y + 1, 1, 1);
+    snprintf(title, sizeof(title), "%d", y);
+  }
+  const double total = static_cast<double>(end - start) * 86400.0;
+  const double done = static_cast<double>(now) - static_cast<double>(start) * 86400.0;
+  const float frac = constrain(static_cast<float>(done / total), 0.0f, 1.0f);
+  const int pct = static_cast<int>(frac * 100.0f);
+  char pctStr[8], left[28];
+  snprintf(pctStr, sizeof(pctStr), "%d%%", pct);
+  const double remainSec = total - done;
+  if (kind == 0) {
+    const int mins = static_cast<int>(remainSec / 60.0);
+    snprintf(left, sizeof(left), "%dh %02dm left", mins / 60, mins % 60);
+  } else {
+    const int days = static_cast<int>(remainSec / 86400.0);
+    snprintf(left, sizeof(left), days == 1 ? "%d day left" : "%d days left", days);
+  }
+  if (hero) {
+    cv->setFont(&Fredoka16);
+    ellipsized(title, r.x + 18, r.y + 12, r.w - 36, C_MUTED);
+    cv->setFont(&Fredoka44);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(pctStr, r.x + 16, r.y + 28);
+    cv->setFont(&Fredoka12);
+    cv->setTextColor(C_MUTED, C_CARD);
+    cv->drawRightString(left, r.x + r.w - 18, r.y + 52);
+    cv->fillRoundRect(r.x + 18, r.y + 80, r.w - 36, 8, 4, C_LINE);
+    const int fw = static_cast<int>((r.w - 36) * frac);
+    if (fw > 0) cv->fillRoundRect(r.x + 18, r.y + 80, max(fw, 8), 8, 4, accent);
+  } else {
+    cv->setFont(&Fredoka12);
+    ellipsized(title, r.x + 10, r.y + 10, r.w - 20, C_MUTED);
+    cv->setFont(&Fredoka28);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(pctStr, r.x + 10, r.y + 28);
+    cv->fillRoundRect(r.x + 10, r.y + 62, r.w - 20, 5, 2, C_LINE);
+    const int fw = static_cast<int>((r.w - 20) * frac);
+    if (fw > 0) cv->fillRoundRect(r.x + 10, r.y + 62, max(fw, 5), 5, 2, accent);
+    cv->setFont(&Fredoka12);
+    ellipsized(left, r.x + 10, r.y + 72, r.w - 20, C_MUTED);
+  }
+}
+
+// ---- Sunrise & sunset -------------------------------------------------------
+// NOAA's simplified solar equations; good to about a minute.
+bool sunTimes(int y, int m, int d, double lat, double lon, double& riseUtcMin, double& setUtcMin) {
+  const int64_t n = daysFromCivil(y, m, d) - daysFromCivil(y, 1, 1) + 1;
+  const double g = 2.0 * PI / 365.0 * (n - 1);
+  const double eq = 229.18 * (0.000075 + 0.001868 * cos(g) - 0.032077 * sin(g) - 0.014615 * cos(2 * g) -
+                              0.040849 * sin(2 * g));
+  const double decl = 0.006918 - 0.399912 * cos(g) + 0.070257 * sin(g) - 0.006758 * cos(2 * g) +
+                      0.000907 * sin(2 * g) - 0.002697 * cos(3 * g) + 0.00148 * sin(3 * g);
+  const double latR = lat * PI / 180.0;
+  const double c = cos(90.833 * PI / 180.0) / (cos(latR) * cos(decl)) - tan(latR) * tan(decl);
+  if (c < -1.0 || c > 1.0) return false;  // polar day / night
+  const double ha = acos(c) * 180.0 / PI;
+  riseUtcMin = 720.0 - 4.0 * (lon + ha) - eq;
+  setUtcMin = 720.0 - 4.0 * (lon - ha) - eq;
+  return true;
+}
+
+void hhmm(double localMin, char* out, size_t cap) {
+  int t = static_cast<int>(localMin + 0.5);
+  t = ((t % 1440) + 1440) % 1440;
+  const uint32_t asEpoch = static_cast<uint32_t>(t) * 60U;
+  formatClock(asEpoch, out, cap);
+}
+
+void drawSun(const Rect& r, uint16_t accent, bool hero) {
+  if (!clockReady()) return notReady(r, hero, "Waiting for time");
+  const double lat = gState.location.lat_e6 / 1e6, lon = gState.location.lon_e6 / 1e6;
+  int y, mo, d, h, mi, s, wd;
+  espclock::localTime(y, mo, d, h, mi, s, wd);
+  double rise = 0, set = 0;
+  if (!sunTimes(y, mo, d, lat, lon, rise, set)) return notReady(r, hero, "No sunrise today");
+  const double tz = localOffsetSec() / 60.0;
+  rise += tz;
+  set += tz;
+  char riseS[16], setS[16], len[24];
+  hhmm(rise, riseS, sizeof(riseS));
+  hhmm(set, setS, sizeof(setS));
+  const int dayLen = static_cast<int>(set - rise + 0.5);
+  snprintf(len, sizeof(len), "%dh %02dm daylight", dayLen / 60, dayLen % 60);
+  const double nowMin = h * 60 + mi + s / 60.0;
+  const float t = static_cast<float>(constrain((nowMin - rise) / (set - rise), -0.05, 1.05));
+  const bool up = nowMin >= rise && nowMin <= set;
+  if (hero) {
+    // Arc of the sun's path with today's position.
+    const int cx = r.x + r.w / 2, cy = r.y + 70, R = 54;
+    for (int i = 0; i <= 40; ++i) {
+      const float a = PI * i / 40.0f;
+      cv->fillCircle(cx - cosf(a) * R, cy - sinf(a) * R * 0.85f, 1, C_LINE);
+    }
+    cv->drawFastHLine(r.x + 16, cy, r.w - 32, C_LINE);
+    if (up) {
+      const float a = PI * t;
+      const int sx = cx - cosf(a) * R, sy = cy - sinf(a) * R * 0.85f;
+      cv->fillCircle(sx, sy, 8, mixColor(C_SUN, C_CARD, 45));
+      cv->fillCircle(sx, sy, 5, C_SUN);
+    } else {
+      cv->fillCircle(cx, cy + 2, 4, C_MUTED);
+    }
+    cv->setFont(&Fredoka16);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(riseS, r.x + 14, r.y + 76);
+    cv->drawRightString(setS, r.x + r.w - 14, r.y + 76);
+    cv->setFont(&Fredoka12);
+    cv->setTextColor(C_MUTED, C_CARD);
+    cv->drawString("Sunrise", r.x + 14, r.y + 8);
+    cv->drawRightString("Sunset", r.x + r.w - 14, r.y + 8);
+    drawCenterTruncated(len, cx, r.y + 44, 110, C_MUTED);
+  } else {
+    cv->setFont(&Fredoka12);
+    ellipsized(up ? "Sun is up" : "Sun is down", r.x + 10, r.y + 10, r.w - 20, C_MUTED);
+    cv->setFont(&Fredoka16);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(riseS, r.x + 10, r.y + 34);
+    cv->drawString(setS, r.x + 10, r.y + 56);
+    cv->setFont(&Fredoka12);
+    cv->setTextColor(C_MUTED, C_CARD);
+    cv->drawRightString("rise", r.x + r.w - 10, r.y + 37);
+    cv->drawRightString("set", r.x + r.w - 10, r.y + 59);
+    char shortLen[12];
+    snprintf(shortLen, sizeof(shortLen), "%dh %02dm", dayLen / 60, dayLen % 60);
+    ellipsized(shortLen, r.x + 10, r.y + r.h - 20, r.w - 20, C_MUTED);
+  }
+}
+
+// ---- Moon phase -------------------------------------------------------------
+void moonDisc(int cx, int cy, int R, float phase) {
+  const uint16_t dark = mixColor(C_INK, C_CARD, 22);
+  const uint16_t lit = mixColor(C_BUTTER, C_WHITE, 70);
+  cv->fillCircle(cx, cy, R, dark);
+  const float k = cosf(2.0f * PI * phase);
+  for (int yy = -R; yy <= R; ++yy) {
+    const float w = sqrtf(static_cast<float>(R * R - yy * yy));
+    float x0, x1;
+    if (phase < 0.5f) {
+      x0 = w * k;
+      x1 = w;
+    } else {
+      x0 = -w;
+      x1 = -w * k;
+    }
+    const int a = static_cast<int>(lroundf(x0)), b = static_cast<int>(lroundf(x1));
+    if (b > a) cv->drawFastHLine(cx + a, cy + yy, b - a, lit);
+  }
+  cv->drawCircle(cx, cy, R, C_LINE);
+}
+
+void drawMoon(const Rect& r, uint16_t accent, bool hero) {
+  (void)accent;
+  if (!clockReady()) return notReady(r, hero, "Waiting for time");
+  const double synodic = 29.530588853;
+  const double days = (static_cast<double>(espclock::epochUtc()) - 947182440.0) / 86400.0;
+  double age = fmod(days, synodic);
+  if (age < 0) age += synodic;
+  const float phase = static_cast<float>(age / synodic);
+  const int illum = static_cast<int>((1.0f - cosf(2.0f * PI * phase)) * 50.0f + 0.5f);
+  const char* name = age < 1.84 ? "New moon" : age < 5.53 ? "Waxing crescent" : age < 9.22 ? "First quarter"
+                   : age < 12.91 ? "Waxing gibbous" : age < 16.61 ? "Full moon" : age < 20.30 ? "Waning gibbous"
+                   : age < 23.99 ? "Last quarter" : age < 27.68 ? "Waning crescent" : "New moon";
+  const int toFull = static_cast<int>(fmod(14.765 - age + synodic, synodic) + 0.5);
+  char lit[16], next[24];
+  snprintf(lit, sizeof(lit), "%d%% lit", illum);
+  if (toFull == 0) strlcpy(next, "Full tonight", sizeof(next));
+  else snprintf(next, sizeof(next), toFull == 1 ? "Full in %d day" : "Full in %d days", toFull);
+  if (hero) {
+    moonDisc(r.x + 58, r.y + r.h / 2, 36, phase);
+    cv->setFont(&Fredoka20);
+    ellipsized(name, r.x + 108, r.y + 22, r.w - 120, C_INK);
+    cv->setFont(&Fredoka16);
+    ellipsized(lit, r.x + 108, r.y + 50, r.w - 120, C_MUTED);
+    cv->setFont(&Fredoka12);
+    ellipsized(next, r.x + 108, r.y + 72, r.w - 120, C_MUTED);
+  } else {
+    moonDisc(r.x + r.w / 2, r.y + 34, 22, phase);
+    const char* shortName = age < 1.84 ? "New moon" : age < 5.53 ? "Crescent" : age < 9.22 ? "1st quarter"
+                          : age < 12.91 ? "Gibbous" : age < 16.61 ? "Full moon" : age < 20.30 ? "Gibbous"
+                          : age < 23.99 ? "Last quarter" : age < 27.68 ? "Crescent" : "New moon";
+    cv->setFont(&Fredoka12);
+    drawCenterTruncated(shortName, r.x + r.w / 2, r.y + 62, r.w - 12, C_INK);
+    drawCenterTruncated(lit, r.x + r.w / 2, r.y + 76, r.w - 12, C_MUTED);
+  }
+}
+
+// ---- Month calendar ---------------------------------------------------------
+void monthGrid(int x, int y, int cellW, int rowH, int yr, int mo, int today, uint16_t accent) {
+  cv->setFont(&lgfx::fonts::Font0);
+  static const char* const heads[] = {"M", "T", "W", "T", "F", "S", "S"};
+  for (int c = 0; c < 7; ++c) {
+    cv->setTextColor(c >= 5 ? accent : C_MUTED, C_CARD);
+    cv->drawCenterString(heads[c], x + c * cellW + cellW / 2, y);
+  }
+  const int lead = (weekdayOf(daysFromCivil(yr, mo, 1)) + 6) % 7;  // Monday first
+  const int n = daysInMonth(yr, mo);
+  for (int day = 1; day <= n; ++day) {
+    const int idx = lead + day - 1;
+    const int cx = x + (idx % 7) * cellW + cellW / 2;
+    const int cy = y + rowH + (idx / 7) * rowH;
+    char num[4];
+    snprintf(num, sizeof(num), "%d", day);
+    if (day == today) {
+      cv->fillRoundRect(cx - cellW / 2 + 1, cy - 2, cellW - 2, rowH - 1, 3, accent);
+      cv->setTextColor(C_ONACCENT, accent);
+    } else {
+      cv->setTextColor(C_INK, C_CARD);
+    }
+    cv->drawCenterString(num, cx, cy);
+  }
+}
+
+void drawMonth(const Rect& r, uint16_t accent, bool hero) {
+  if (!clockReady()) return notReady(r, hero, "Waiting for time");
+  int y, mo, d, h, mi, s, wd;
+  espclock::localTime(y, mo, d, h, mi, s, wd);
+  const int64_t today = static_cast<int64_t>(espclock::epochLocal() / 86400UL);
+  if (hero) {
+    char num[4];
+    snprintf(num, sizeof(num), "%d", d);
+    cv->setFont(&Fredoka44);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(num, r.x + 16, r.y + 14);
+    cv->setFont(&Fredoka16);
+    ellipsized(kDayShort[weekdayOf(today)], r.x + 18, r.y + 62, 80, accent);
+    cv->setFont(&Fredoka12);
+    ellipsized(kMonthNames[(mo - 1) % 12], r.x + 18, r.y + 80, 86, C_MUTED);
+    monthGrid(r.x + 100, r.y + 10, 16, 13, y, mo, d, accent);
+  } else {
+    cv->setFont(&Fredoka12);
+    char head[20];
+    snprintf(head, sizeof(head), "%.3s %d", kMonthNames[(mo - 1) % 12], y);
+    ellipsized(head, r.x + 8, r.y + 6, r.w - 16, C_INK);
+    monthGrid(r.x + 4, r.y + 22, (r.w - 8) / 7, 11, y, mo, d, accent);
+  }
+}
+
+// ---- Next alarm (from the phone) --------------------------------------------
+void untilText(int32_t secs, char* out, size_t cap) {
+  if (secs < 60) {
+    strlcpy(out, "in under a minute", cap);
+  } else if (secs < 3600) {
+    snprintf(out, cap, "in %d min", static_cast<int>(secs / 60));
+  } else if (secs < 86400) {
+    snprintf(out, cap, "in %dh %02dm", static_cast<int>(secs / 3600), static_cast<int>((secs / 60) % 60));
+  } else {
+    const int dd = static_cast<int>(secs / 86400);
+    snprintf(out, cap, dd == 1 ? "in %d day" : "in %d days", dd);
+  }
+}
+
+void drawAlarm(const Rect& r, uint16_t accent, bool hero) {
+  const uint32_t now = espclock::epochUtc();
+  const bool have = gState.alarmValid && gState.alarm.epoch > now && clockReady();
+  if (!have) {
+    icons::bell(*cv, r.x + r.w / 2 - (hero ? 14 : 10), r.y + (hero ? 18 : 14), hero ? 28 : 20, accent);
+    return notReady(Rect{r.x, r.y + (hero ? 22 : 18), r.w, r.h}, hero, "No alarm set");
+  }
+  char t[16], until[28], label[25], day[16];
+  formatClock(gState.alarm.epoch + localOffsetSec(), t, sizeof(t));
+  untilText(static_cast<int32_t>(gState.alarm.epoch - now), until, sizeof(until));
+  sanitize(gState.alarm.label, label, sizeof(label));
+  const int64_t alarmDay = static_cast<int64_t>((gState.alarm.epoch + localOffsetSec()) / 86400UL);
+  const int64_t today = static_cast<int64_t>(espclock::epochLocal() / 86400UL);
+  if (alarmDay == today) strlcpy(day, "Today", sizeof(day));
+  else if (alarmDay == today + 1) strlcpy(day, "Tomorrow", sizeof(day));
+  else strlcpy(day, kDayShort[weekdayOf(alarmDay)], sizeof(day));
+  if (hero) {
+    icons::bell(*cv, r.x + 16, r.y + 12, 22, accent);
+    cv->setFont(&Fredoka16);
+    ellipsized(label[0] ? label : "Next alarm", r.x + 46, r.y + 14, r.w - 64, C_MUTED);
+    cv->setFont(&Fredoka44);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(t, r.x + 16, r.y + 38);
+    cv->setFont(&Fredoka12);
+    cv->setTextColor(C_MUTED, C_CARD);
+    cv->drawRightString(day, r.x + r.w - 18, r.y + 46);
+    cv->drawRightString(until, r.x + r.w - 18, r.y + 64);
+  } else {
+    icons::bell(*cv, r.x + 10, r.y + 8, 16, accent);
+    cv->setFont(&Fredoka12);
+    ellipsized(day, r.x + 32, r.y + 10, r.w - 42, C_MUTED);
+    cv->setFont(&Fredoka28);
+    if (cv->textWidth(t) > r.w - 16) cv->setFont(&Fredoka20);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(t, r.x + 10, r.y + 32);
+    cv->setFont(&Fredoka12);
+    ellipsized(until, r.x + 10, r.y + r.h - 22, r.w - 20, C_MUTED);
+  }
+}
+
+// ---- Countdown (from the phone) ---------------------------------------------
+void drawCountdown(const Rect& r, uint16_t accent, bool hero) {
+  char label[29];
+  sanitize(gState.countdown.label, label, sizeof(label));
+  if (!gState.countdownValid || !clockReady()) {
+    return notReady(r, hero, gState.countdownValid ? "Waiting for time" : "Set a countdown in the app");
+  }
+  // Count whole calendar days in local time, like a wall calendar would.
+  const int32_t off = localOffsetSec();
+  const int64_t targetDay = static_cast<int64_t>((gState.countdown.target + off) / 86400UL);
+  const int64_t today = static_cast<int64_t>(espclock::epochLocal() / 86400UL);
+  const int64_t days = targetDay - today;
+  char big[16], small[24];
+  if (days > 0) {
+    snprintf(big, sizeof(big), "%lld", static_cast<long long>(days));
+    strlcpy(small, days == 1 ? "day to go" : "days to go", sizeof(small));
+  } else if (days == 0) {
+    strlcpy(big, "Today", sizeof(big));
+    strlcpy(small, "it's the day!", sizeof(small));
+  } else {
+    snprintf(big, sizeof(big), "%lld", static_cast<long long>(-days));
+    strlcpy(small, days == -1 ? "day ago" : "days ago", sizeof(small));
+  }
+  if (hero) {
+    cv->setFont(&Fredoka16);
+    ellipsized(label[0] ? label : "Countdown", r.x + 18, r.y + 12, r.w - 36, C_MUTED);
+    cv->setFont(&Fredoka44);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(big, r.x + 16, r.y + 34);
+    const int bw = cv->textWidth(big);
+    cv->setFont(&Fredoka16);
+    ellipsized(small, r.x + 24 + bw, r.y + 56, r.w - 40 - bw, C_MUTED);
+    cv->fillCircle(r.x + r.w - 26, r.y + 22, 6, accent);
+  } else {
+    cv->setFont(&Fredoka12);
+    ellipsized(label[0] ? label : "Countdown", r.x + 10, r.y + 10, r.w - 20, C_MUTED);
+    cv->setFont(&Fredoka28);
+    if (cv->textWidth(big) > r.w - 16) cv->setFont(&Fredoka20);
+    cv->setTextColor(C_INK, C_CARD);
+    cv->drawString(big, r.x + 10, r.y + 30);
+    cv->setFont(&Fredoka12);
+    ellipsized(small, r.x + 10, r.y + r.h - 24, r.w - 20, C_MUTED);
+  }
+}
+
+// ---- Device status ----------------------------------------------------------
+void drawDevice(const Rect& r, uint16_t accent, bool hero) {
+  char ble[24], wifi[24], bat[24], up[24];
+  snprintf(ble, sizeof(ble), "BT %s", gState.bleConnected ? "linked" : gState.bleActive ? "waiting" : "off");
+  static const char* const ws[] = {"off", "joining", "on", "failed"};
+  snprintf(wifi, sizeof(wifi), "Wi-Fi %s", ws[gState.wifiState & 3]);
+  if (gState.battery.millivolts > 0) {
+    snprintf(bat, sizeof(bat), "%d%%%s", gState.battery.percent, gState.charging ? " charging" : "");
+  } else {
+    strlcpy(bat, gState.usbPower ? "USB power" : "--", sizeof(bat));
+  }
+  const uint32_t secs = millis() / 1000;
+  if (secs >= 86400) snprintf(up, sizeof(up), "up %lud %luh", secs / 86400, (secs / 3600) % 24);
+  else snprintf(up, sizeof(up), "up %luh %02lum", secs / 3600, (secs / 60) % 60);
+  if (hero) {
+    cv->setFont(&Fredoka16);
+    ellipsized("This widget", r.x + 18, r.y + 10, r.w - 36, C_MUTED);
+    icons::bluetooth(*cv, r.x + 18, r.y + 36, 16, gState.bleConnected ? accent : C_MUTED);
+    icons::wifi(*cv, r.x + 18, r.y + 62, 16, gState.wifiState == 2 ? accent : C_MUTED);
+    cv->setFont(&Fredoka16);
+    ellipsized(ble, r.x + 40, r.y + 36, 80, C_INK);
+    ellipsized(wifi, r.x + 40, r.y + 62, 80, C_INK);
+    icons::battery(*cv, r.x + 124, r.y + 38, 26, 13, gState.battery.percent, accent);
+    ellipsized(bat, r.x + 156, r.y + 36, r.w - 168, C_INK);
+    cv->setFont(&Fredoka12);
+    ellipsized(up, r.x + 124, r.y + 64, r.w - 136, C_MUTED);
+  } else {
+    cv->setFont(&Fredoka12);
+    ellipsized("This widget", r.x + 10, r.y + 8, r.w - 20, C_MUTED);
+    ellipsized(ble, r.x + 10, r.y + 26, r.w - 20, gState.bleConnected ? C_INK : C_MUTED);
+    ellipsized(wifi, r.x + 10, r.y + 42, r.w - 20, gState.wifiState == 2 ? C_INK : C_MUTED);
+    ellipsized(bat, r.x + 10, r.y + 58, r.w - 20, C_INK);
+    ellipsized(up, r.x + 10, r.y + 74, r.w - 20, C_MUTED);
+  }
+}
+
+// ---- Thought of the day -----------------------------------------------------
+const char* const kThoughts[] = {
+    "Small steps every day add up to big things.",
+    "Done is better than perfect.",
+    "Drink some water. Stretch. Breathe.",
+    "Make it work, then make it nice.",
+    "Rest is part of the work.",
+    "Be kind - everyone is fighting something.",
+    "One thing at a time.",
+    "You've done hard things before.",
+    "Curiosity beats certainty.",
+    "Start where you are. Use what you have.",
+    "A walk can fix a lot of problems.",
+    "Ship it, learn, improve.",
+    "The best time to start was yesterday. Next best: now.",
+    "Focus on what you can control.",
+    "Write it down so your head can rest.",
+    "Every expert was once a beginner.",
+    "Slow is smooth, smooth is fast.",
+    "Today is a good day to finish something.",
+    "Ask for help. It's a skill, not a weakness.",
+    "Celebrate the small wins.",
+    "Simple beats clever.",
+    "Learn one new thing today.",
+    "Leave it better than you found it.",
+    "Sleep on big decisions.",
+    "Keep going. You're closer than you think.",
+    "Tidy space, tidy mind.",
+    "Measure twice, cut once.",
+    "Call someone you miss.",
+    "Progress, not perfection.",
+    "Breathe in. Breathe out. Carry on.",
+};
+constexpr int kThoughtCount = sizeof(kThoughts) / sizeof(kThoughts[0]);
+
+void drawThought(const Rect& r, uint16_t accent, bool hero) {
+  const int64_t day = clockReady() ? static_cast<int64_t>(espclock::epochLocal() / 86400UL) : 0;
+  const char* text = kThoughts[static_cast<int>((day * 7 + 3) % kThoughtCount)];
+  if (hero) {
+    icons::quote(*cv, r.x + 14, r.y + 8, 22, accent);
+    cv->setFont(&Fredoka16);
+    wrapped(text, r.x + 18, r.y + 32, r.w - 36, 18, 3, C_INK);
+  } else {
+    icons::quote(*cv, r.x + 10, r.y + 8, 16, accent);
+    cv->setFont(&Fredoka12);
+    wrapped(text, r.x + 10, r.y + 28, r.w - 20, 14, 4, C_INK);
+  }
+}
+
 void drawWidget(const espw::SlotConfig& slot, const Rect& r, bool hero) {
   const uint16_t accent = accentColor(slot.accent);
   card(r, accent, hero);
@@ -735,6 +1391,16 @@ void drawWidget(const espw::SlotConfig& slot, const Rect& r, bool hero) {
     case espw::WidgetText: drawText(r, accent, hero, slot.option); break;
     case espw::WidgetPhoto: drawPhoto(r, accent, hero); break;
     case espw::WidgetPhoneBattery: drawPhoneBattery(r, accent, hero); break;
+    case espw::WidgetAnalogClock: drawAnalog(r, accent, hero); break;
+    case espw::WidgetWorldClock: drawWorldClock(r, accent, hero, slot.option); break;
+    case espw::WidgetProgress: drawProgress(r, accent, hero, slot.option); break;
+    case espw::WidgetSun: drawSun(r, accent, hero); break;
+    case espw::WidgetMoon: drawMoon(r, accent, hero); break;
+    case espw::WidgetMonth: drawMonth(r, accent, hero); break;
+    case espw::WidgetAlarm: drawAlarm(r, accent, hero); break;
+    case espw::WidgetCountdown: drawCountdown(r, accent, hero); break;
+    case espw::WidgetDevice: drawDevice(r, accent, hero); break;
+    case espw::WidgetThought: drawThought(r, accent, hero); break;
     default: {
       cv->setFont(&Fredoka12);
       cv->setTextColor(C_MUTED, C_CARD);
@@ -1029,7 +1695,7 @@ void drawDiag() {
   put("v%d.%d.%d  build %d", ESPW_VERSION_MAJOR, ESPW_VERSION_MINOR, ESPW_VERSION_PATCH, ESPW_BUILD);
   put("ADC pin: %d mV  (vbat %.2f V)", static_cast<int>(d.rawMv), d.vbat);
   put("cell valid %d  batt %d%% %dmV", d.voltageValid ? 1 : 0, gState.battery.percent, gState.battery.millivolts);
-  put("LED red %d  blue %d", d.ledRed, d.ledBlue);
+  put("LED lit: red %s  blue %s", d.ledRed == 0 ? "yes" : "no", d.ledBlue == 0 ? "yes" : "no");
   put("USB rule: adc %d  led %d  host %d", d.byAdc ? 1 : 0, d.byLed ? 1 : 0, d.byHost ? 1 : 0);
   put("USB now %d   charging %d  full %d", gState.usbPower ? 1 : 0, gState.charging ? 1 : 0, gState.chargeFull ? 1 : 0);
   put("BLE act %d conn %d pair %d", gState.bleActive ? 1 : 0, gState.bleConnected ? 1 : 0, gState.pairingActive ? 1 : 0);
@@ -1140,6 +1806,26 @@ bool uiNeedsAnimTick() {
   return false;
 }
 
+// Redraws only the rows that hold the charging battery (about 35-55 rows
+// instead of the whole screen), which is what makes ~40+ fps possible.
+void uiAnimFrame() {
+  if (!uiNeedsAnimTick()) return;
+  const uint8_t page = stateCurrentPage();
+  const auto& cfg = gState.layout.page[page];
+  const PageGeometry g = geometry(page);
+  for (int i = 0; i < g.count; ++i) {
+    if (cfg.slots[i].type != espw::WidgetPhoneBattery) continue;
+    const Rect& r = g.slots[i];
+    const int y0 = r.y + (g.hero[i] ? 12 : 10);
+    const int h = g.hero[i] ? 56 : 34;
+    themeApply(darkTheme());
+    tft.startWrite();
+    renderBand(y0, h, false);
+    tft.endWrite();
+    return;
+  }
+}
+
 bool uiNeedsSecondTick() {
   if (s_diag) return true;
   if (gState.toast[0]) return true;
@@ -1149,7 +1835,7 @@ bool uiNeedsSecondTick() {
   const auto& cfg = gState.layout.page[page];
   const int count = (cfg.template_id == espw::TemplateGrid) ? 4 : 3;
   for (int i = 0; i < count; ++i) {
-    if (cfg.slots[i].type == espw::WidgetClock) return true;
+    if (cfg.slots[i].type == espw::WidgetClock || cfg.slots[i].type == espw::WidgetAnalogClock) return true;
   }
   return false;
 }

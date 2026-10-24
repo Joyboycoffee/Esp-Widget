@@ -120,39 +120,51 @@ private fun Dashboard(state: AppState) {
             .fillMaxSize()
             .background(c(cream))
             .cornerRadius(24.dp)
-            .padding(14.dp)
+            .padding(10.dp)
             .clickable(actionStartActivity(Intent(context, MainActivity::class.java))),
     ) {
-        Column(modifier = GlanceModifier.fillMaxSize()) {
-            Header(state, context, wide)
-            Spacer(GlanceModifier.height(10.dp))
-            if (wide) {
-                Row(modifier = GlanceModifier.fillMaxWidth()) {
-                    WeatherTile(p, GlanceModifier.defaultWeight())
-                    Spacer(GlanceModifier.width(8.dp))
-                    if (tall) StepsTile(p, GlanceModifier.defaultWeight()) else EventTile(p, GlanceModifier.defaultWeight())
-                }
-                if (tall) {
+        if (wide) {
+            // Big tap strips on both edges flip the ESP's page. They are part
+            // of the row, so the content can never push them off-screen.
+            Row(modifier = GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                SideArrow("‹", -1, GlanceModifier.width(36.dp).fillMaxHeight())
+                Spacer(GlanceModifier.width(8.dp))
+                Column(modifier = GlanceModifier.defaultWeight().fillMaxHeight()) {
+                    Header(state, context, wide)
                     Spacer(GlanceModifier.height(8.dp))
                     Row(modifier = GlanceModifier.fillMaxWidth()) {
-                        EventTile(p, GlanceModifier.defaultWeight())
+                        WeatherTile(p, GlanceModifier.defaultWeight())
                         Spacer(GlanceModifier.width(8.dp))
-                        MediaTile(p, GlanceModifier.defaultWeight())
+                        if (tall) StepsTile(p, GlanceModifier.defaultWeight()) else EventTile(p, GlanceModifier.defaultWeight())
                     }
-                    Spacer(GlanceModifier.height(8.dp))
-                    NotificationTile(p, GlanceModifier.fillMaxWidth())
-                    Spacer(GlanceModifier.height(8.dp))
-                    Watchlist(p, rows = 2)
-                    Spacer(GlanceModifier.height(8.dp))
-                    PageBar(state)
-                } else {
-                    Spacer(GlanceModifier.defaultWeight())
-                    PageBar(state)
+                    if (tall) {
+                        Spacer(GlanceModifier.height(8.dp))
+                        Row(modifier = GlanceModifier.fillMaxWidth()) {
+                            EventTile(p, GlanceModifier.defaultWeight())
+                            Spacer(GlanceModifier.width(8.dp))
+                            MediaTile(p, GlanceModifier.defaultWeight())
+                        }
+                        Spacer(GlanceModifier.height(8.dp))
+                        NotificationTile(p, GlanceModifier.fillMaxWidth())
+                        Spacer(GlanceModifier.height(8.dp))
+                        Watchlist(p, rows = 2)
+                    }
                 }
-            } else {
-                WeatherLine(p)
+                Spacer(GlanceModifier.width(8.dp))
+                SideArrow("›", 1, GlanceModifier.width(36.dp).fillMaxHeight())
+            }
+        } else {
+            // Small (2x2): two big buttons across the top, always visible.
+            Column(modifier = GlanceModifier.fillMaxSize()) {
+                Row(modifier = GlanceModifier.fillMaxWidth().height(38.dp)) {
+                    SideArrow("‹", -1, GlanceModifier.defaultWeight().fillMaxHeight())
+                    Spacer(GlanceModifier.width(6.dp))
+                    SideArrow("›", 1, GlanceModifier.defaultWeight().fillMaxHeight())
+                }
+                Spacer(GlanceModifier.height(6.dp))
+                Header(state, context, wide)
                 Spacer(GlanceModifier.defaultWeight())
-                PageBar(state, 40)
+                DeviceLine(state)
             }
         }
     }
@@ -172,42 +184,29 @@ private fun Header(state: AppState, context: Context, wide: Boolean) {
     }
 }
 
+/** Full-height strip on the widget's edge: a large, easy tap target. */
 @Composable
-private fun BigArrow(label: String, delta: Int, modifier: GlanceModifier) {
+private fun SideArrow(label: String, delta: Int, modifier: GlanceModifier) {
     Box(
         modifier = modifier
-            .fillMaxHeight()
-            .background(c(sage.copy(alpha = 0.45f)))
+            .background(c(sage.copy(alpha = 0.40f)))
             .cornerRadius(16.dp)
             .clickable(actionRunCallback<StepPageAction>(actionParametersOf(DeltaKey to delta))),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = TextStyle(color = c(ink), fontSize = 26.sp, fontWeight = FontWeight.Bold))
+        Text(label, style = TextStyle(color = c(ink), fontSize = 28.sp, fontWeight = FontWeight.Bold))
     }
 }
 
-/** Full-width bar with two big tap targets: [ ‹ ]  2/5  [ › ] changes what the ESP shows. */
-@Composable
-private fun PageBar(state: AppState, height: Int = 46) {
+private fun pageLabel(state: AppState): String {
     val p = state.persisted
     val count = if (p.settings.stocksMode) {
         p.stocks.count { it.valid }.let { if (it >= 2) it + 1 else 1 }
     } else {
         p.layout.pages.size.coerceAtLeast(1)
     }
-    val page = ((state.link.status?.page ?: p.settings.currentPage).coerceIn(0, count - 1)) + 1
-    Row(
-        modifier = GlanceModifier.fillMaxWidth().height(height.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        BigArrow("‹", -1, GlanceModifier.defaultWeight())
-        Text(
-            "$page/$count",
-            style = TextStyle(color = c(muted), fontSize = 12.sp, fontWeight = FontWeight.Medium),
-            modifier = GlanceModifier.padding(horizontal = 10.dp),
-        )
-        BigArrow("›", 1, GlanceModifier.defaultWeight())
-    }
+    val page = (state.link.status?.page ?: p.settings.currentPage).coerceIn(0, count - 1) + 1
+    return "$page/$count"
 }
 
 @Composable
@@ -225,8 +224,8 @@ private fun StatusPill(state: AppState) {
         Spacer(GlanceModifier.width(5.dp))
         Text(
             when {
-                connected && battery != null -> "ESP $battery%"
-                connected -> "Linked"
+                connected && battery != null -> "ESP $battery% · ${pageLabel(state)}"
+                connected -> "Linked · ${pageLabel(state)}"
                 else -> "Offline"
             },
             style = TextStyle(color = c(ink), fontSize = 10.sp, fontWeight = FontWeight.Medium),
@@ -389,8 +388,8 @@ private fun DeviceLine(state: AppState) {
         Spacer(GlanceModifier.width(5.dp))
         Text(
             when {
-                state.link.connected && battery != null -> "ESP $battery%"
-                state.link.connected -> "ESP linked"
+                state.link.connected && battery != null -> "ESP $battery% · ${pageLabel(state)}"
+                state.link.connected -> "Page ${pageLabel(state)}"
                 else -> "ESP offline"
             },
             style = TextStyle(color = c(muted), fontSize = 10.sp),

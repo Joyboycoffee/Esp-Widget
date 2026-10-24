@@ -32,6 +32,8 @@ enum class MsgType : uint8_t {
   Text = 0x18,
   Location = 0x19,
   PhoneBattery = 0x1A,  // payload: PhoneBatteryPayload (phone -> widget)
+  NextAlarm = 0x1B,     // payload: AlarmPayload
+  Countdown = 0x1C,     // payload: CountdownPayload
   Layout = 0x20,
   Settings = 0x21,
   WifiScan = 0x22,
@@ -64,7 +66,17 @@ enum WidgetType : uint8_t {
   WidgetText = 8,
   WidgetPhoto = 9,
   WidgetPhoneBattery = 10,
-  WidgetCount = 11,
+  WidgetAnalogClock = 11,
+  WidgetWorldClock = 12,  // option: city index (see kZones in ui.cpp)
+  WidgetProgress = 13,    // option: 0 day, 1 week, 2 month, 3 year
+  WidgetSun = 14,         // sunrise / sunset from the saved location
+  WidgetMoon = 15,
+  WidgetMonth = 16,       // month calendar
+  WidgetAlarm = 17,       // phone's next alarm
+  WidgetCountdown = 18,   // days to a date set in the app
+  WidgetDevice = 19,      // the widget's own status
+  WidgetThought = 20,     // thought of the day
+  WidgetCount = 21,
 };
 
 enum PageTemplate : uint8_t {
@@ -150,6 +162,16 @@ struct PhoneBatteryPayload {
   uint8_t percent;
   uint8_t charging;
   uint32_t updated;
+};
+
+struct AlarmPayload {
+  uint32_t epoch;  // UTC; 0 = no alarm
+  char label[24];
+};
+
+struct CountdownPayload {
+  uint32_t target;  // UTC of the target day; 0 = none
+  char label[28];
 };
 
 struct StockPayload {

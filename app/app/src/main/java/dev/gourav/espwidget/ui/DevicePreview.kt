@@ -593,7 +593,128 @@ private fun MiniWidgetContent(type: Int, option: Int, accent: Int, hero: Boolean
                 }
             }
         }
+        in 11..20 -> ExtraPreview(type, option, accent, hero, state)
         else -> MiniEmpty("Empty", hero)
+    }
+}
+
+/** A rough phone-side picture of the widgets the ESP computes itself. */
+@Composable
+private fun ExtraPreview(type: Int, option: Int, accent: Int, hero: Boolean, state: AppState) {
+    val p = state.persisted
+    val color = Color(accentColor(accent))
+    var now by remember { mutableStateOf(java.time.ZonedDateTime.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = java.time.ZonedDateTime.now()
+            delay(1000)
+        }
+    }
+    val hhmm = java.time.format.DateTimeFormatter.ofPattern(if (p.settings.twelveHour) "h:mm a" else "HH:mm")
+    when (type) {
+        11 -> Canvas(Modifier.fillMaxSize()) {
+            val r = size.minDimension / 2f - 4f
+            val c = Offset(size.width / 2f, size.height / 2f)
+            drawCircle(color.copy(alpha = 0.18f), r, c)
+            drawCircle(Line, r, c, style = Stroke(1.5f))
+            val h = (now.hour % 12 + now.minute / 60f) * (Math.PI / 6).toFloat()
+            val m = now.minute * (Math.PI / 30).toFloat()
+            fun hand(a: Float, len: Float, w: Float) = drawLine(
+                Ink, c, Offset(c.x + kotlin.math.sin(a) * len, c.y - kotlin.math.cos(a) * len), w, StrokeCap.Round,
+            )
+            hand(h, r * 0.5f, 5f)
+            hand(m, r * 0.78f, 3f)
+            drawCircle(color, 4f, c)
+        }
+        12 -> {
+            val city = dev.gourav.espwidget.data.WORLD_CITIES.getOrElse(option) { dev.gourav.espwidget.data.WORLD_CITIES[0] }
+            val there = now.withZoneSameInstant(java.time.ZoneId.of(city.second))
+            MiniInfo(city.first, there.format(hhmm), there.format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM")), hero)
+        }
+        13 -> {
+            val kind = option % 4
+            val today = now.toLocalDate()
+            val (start, end, title) = when (kind) {
+                0 -> Triple(today.atStartOfDay(now.zone), today.plusDays(1).atStartOfDay(now.zone), "Today")
+                1 -> today.minusDays((today.dayOfWeek.value - 1).toLong()).let {
+                    Triple(it.atStartOfDay(now.zone), it.plusDays(7).atStartOfDay(now.zone), "This week")
+                }
+                2 -> today.withDayOfMonth(1).let {
+                    Triple(it.atStartOfDay(now.zone), it.plusMonths(1).atStartOfDay(now.zone),
+                        today.month.getDisplayName(java.time.format.TextStyle.FULL, Locale.getDefault()))
+                }
+                else -> today.withDayOfYear(1).let {
+                    Triple(it.atStartOfDay(now.zone), it.plusYears(1).atStartOfDay(now.zone), today.year.toString())
+                }
+            }
+            val total = (end.toEpochSecond() - start.toEpochSecond()).toFloat()
+            val frac = ((now.toEpochSecond() - start.toEpochSecond()) / total).coerceIn(0f, 1f)
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+                Text(title, fontSize = 7.sp, color = Muted)
+                Text("${(frac * 100).toInt()}%", fontSize = if (hero) 24.sp else 15.sp, fontWeight = FontWeight.Bold, color = Ink)
+                Spacer(Modifier.height(3.dp))
+                Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Line)) {
+                    Box(Modifier.fillMaxWidth(frac).height(4.dp).background(color))
+                }
+            }
+        }
+        14 -> MiniInfo("Sunrise & sunset", "☀", "from your location", hero)
+        15 -> {
+            val age = ((System.currentTimeMillis() / 1000.0 - 947182440.0) / 86400.0).mod(29.530588853)
+            val phase = age / 29.530588853
+            val lit = ((1 - kotlin.math.cos(2 * Math.PI * phase)) * 50).toInt()
+            val name = when {
+                age < 1.84 -> "New moon"; age < 5.53 -> "Waxing crescent"; age < 9.22 -> "First quarter"
+                age < 12.91 -> "Waxing gibbous"; age < 16.61 -> "Full moon"; age < 20.30 -> "Waning gibbous"
+                age < 23.99 -> "Last quarter"; age < 27.68 -> "Waning crescent"; else -> "New moon"
+            }
+            MiniInfo("Moon", "$lit%", name, hero)
+        }
+        16 -> MiniInfo(
+            now.month.getDisplayName(java.time.format.TextStyle.FULL, Locale.getDefault()),
+            now.dayOfMonth.toString(),
+            now.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale.getDefault()),
+            hero,
+        )
+        17 -> {
+            val a = p.nextAlarm
+            if (a.epoch == 0L) MiniEmpty("No alarm set", hero)
+            else {
+                val t = java.time.Instant.ofEpochSecond(a.epoch).atZone(now.zone)
+                MiniInfo(a.label.ifBlank { "Next alarm" }, t.format(hhmm), t.format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM")), hero)
+            }
+        }
+        18 -> {
+            val c = p.countdown
+            if (c.target == 0L) MiniEmpty("Set a countdown", hero)
+            else {
+                val days = java.time.temporal.ChronoUnit.DAYS.between(
+                    now.toLocalDate(), java.time.Instant.ofEpochSecond(c.target).atZone(now.zone).toLocalDate(),
+                )
+                MiniInfo(
+                    c.label.ifBlank { "Countdown" },
+                    if (days == 0L) "Today" else kotlin.math.abs(days).toString(),
+                    if (days > 0) "days to go" else if (days < 0) "days ago" else "it's the day!",
+                    hero,
+                )
+            }
+        }
+        19 -> MiniInfo(
+            "This widget",
+            state.link.status?.let { "${it.battery}%" } ?: "—",
+            if (state.link.connected) "Bluetooth linked" else "offline",
+            hero,
+        )
+        else -> MiniInfo("Thought of the day", "\u201C", "A new one every day", hero)
+    }
+}
+
+@Composable
+private fun MiniInfo(title: String, big: String, sub: String, hero: Boolean) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+        Text(title, fontSize = 7.sp, color = Muted, maxLines = 1)
+        Text(big, fontSize = if (hero) 24.sp else 15.sp, fontWeight = FontWeight.Bold, color = Ink, maxLines = 1)
+        Text(sub, fontSize = 7.sp, color = Muted, maxLines = 1)
     }
 }
 

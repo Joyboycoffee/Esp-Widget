@@ -63,6 +63,7 @@ class LGFX_ST7789 : public lgfx::LGFX_Device {
 extern LGFX_ST7789 tft;
 
 void displayBegin();
+void displayReinit();
 void displayFadeIn(uint8_t target);
 void displayFadeOut(uint8_t from);
 void displaySleepHold();

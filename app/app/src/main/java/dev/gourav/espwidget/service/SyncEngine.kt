@@ -19,7 +19,9 @@ import dev.gourav.espwidget.data.PhoneBattery
 import dev.gourav.espwidget.data.StepsModel
 import dev.gourav.espwidget.data.WeatherModel
 import dev.gourav.espwidget.data.WidgetRepository
+import dev.gourav.espwidget.protocol.AlarmPayload
 import dev.gourav.espwidget.protocol.CalendarPayload
+import dev.gourav.espwidget.protocol.CountdownPayload
 import dev.gourav.espwidget.protocol.HelloPayload
 import dev.gourav.espwidget.protocol.LayoutPayload
 import dev.gourav.espwidget.protocol.LocationPayload
@@ -101,6 +103,12 @@ class SyncEngine(
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         registerSteps()
+        context.registerReceiver(
+            alarmReceiver,
+            IntentFilter(android.app.AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        refreshAlarm()
         // If Android dropped the notification listener binding, ask for it back.
         runCatching {
             android.service.notification.NotificationListenerService.requestRebind(
@@ -149,6 +157,7 @@ class SyncEngine(
                         refreshWeather(force = false)
                         refreshCalendar()
                         refreshMedia()
+                        refreshAlarm()
                         refreshStocks(force = false)
                     }
                 } else {
@@ -296,6 +305,8 @@ class SyncEngine(
         state.calendar.takeIf { it.valid }?.let { sendCalendar(it) }
         state.steps.takeIf { it.valid }?.let { sendSteps(it) }
         if (state.phoneBattery.updated != 0L) sendPhoneBattery(state.phoneBattery)
+        sendAlarm(state.nextAlarm)
+        if (state.countdown.target != 0L) sendCountdown(state.countdown)
         sendLocation(state)
         repo.setLastSync(System.currentTimeMillis() / 1000)
     }
@@ -332,6 +343,8 @@ class SyncEngine(
         if (pbNext.updated != 0L && (pbNext.percent != pbPrev.percent || pbNext.charging != pbPrev.charging)) {
             sendPhoneBattery(pbNext); sent = true
         }
+        if (prev.nextAlarm != next.nextAlarm) { sendAlarm(next.nextAlarm); sent = true }
+        if (prev.countdown != next.countdown) { sendCountdown(next.countdown); sent = true }
         // Steps tick constantly while walking; batch them so the widget is not
         // redrawn for every single step.
         val stepsChanged = kotlin.math.abs(next.steps.steps - prev.steps.steps) >= 25 ||
@@ -398,6 +411,33 @@ class SyncEngine(
 
     private fun sendCalendar(it: dev.gourav.espwidget.data.CalendarModel) {
         ble.send(Msg.CALENDAR, CalendarPayload(it.title, it.start, it.allDay, it.location, it.updated).encode())
+    }
+
+    private fun sendAlarm(a: dev.gourav.espwidget.data.AlarmModel) {
+        ble.send(Msg.NEXT_ALARM, AlarmPayload(a.epoch, a.label).encode())
+    }
+
+    private fun sendCountdown(c: dev.gourav.espwidget.data.CountdownModel) {
+        ble.send(Msg.COUNTDOWN, CountdownPayload(c.target, c.label).encode())
+    }
+
+    /** Reads the phone's next alarm (any clock app that uses the system alarm). */
+    fun refreshAlarm() {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+        val info = runCatching { am.nextAlarmClock }.getOrNull()
+        val epoch = (info?.triggerTime ?: 0L) / 1000
+        val label = info?.showIntent?.creatorPackage?.let { pkg ->
+            runCatching {
+                val pm = context.packageManager
+                pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+            }.getOrNull()
+        } ?: "Alarm"
+        val model = dev.gourav.espwidget.data.AlarmModel(epoch, if (epoch == 0L) "" else label.take(23))
+        if (repo.persisted.value.nextAlarm != model) repo.update { it.copy(nextAlarm = model) }
+    }
+
+    private val alarmReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) { refreshAlarm() }
     }
 
     private fun sendPhoneBattery(b: PhoneBattery) {

@@ -31,6 +31,8 @@ bool s_longHandled = false;
 bool s_screenOff = false;
 uint32_t s_screenOffSince = 0;
 int s_tapCount = 0;
+uint32_t s_reinitAt = 0;   // panel re-init after a charger plug/unplug
+uint32_t s_netStartAt = 0; // Wi-Fi start, delayed until the supply has settled
 uint32_t s_lastTapRelease = 0;
 
 void screenOff() {
@@ -38,11 +40,16 @@ void screenOff() {
   s_screenOff = true;
   s_screenOffSince = millis();
   displayFadeOut(power::brightness());
+  tft.sleep();             // panel controller into sleep mode (saves a few mA)
+  ble::setLowPower(true);  // radio wakes ~4x/s instead of ~25x/s
 }
 
 void screenOn() {
   if (!s_screenOff) return;
   s_screenOff = false;
+  tft.wakeup();
+  delay(120);  // ST7789 needs ~120 ms after sleep-out before drawing
+  ble::setLowPower(false);
   uiRender();  // paint the current content while the backlight is still dark
   displayFadeIn(power::brightness());
 }
@@ -149,11 +156,13 @@ void handlePowerTransitions() {
     stateSetToast("Docked - Wi-Fi allowed", 2200);
     gState.bleActive = true;
     ble::startAdvertising(0);
-    net::begin();
+    s_netStartAt = millis() + 5000;  // let the supply settle before the Wi-Fi radio draws current
   } else {
+    s_netStartAt = 0;
     stateSetToast("On battery - Bluetooth only", 2200);
     net::stop();
   }
+  s_reinitAt = millis() + 1200;
   gState.lastActivityMs = millis();
 }
 
@@ -241,10 +250,24 @@ void loop() {
   }
   ble::loop();
   net::loop();
-  if (millis() - s_lastPower > 2000) {
+  if (millis() - s_lastPower > (s_screenOff ? 10000UL : 2000UL)) {
     s_lastPower = millis();
     power::update();
     handlePowerTransitions();
+  }
+  if (s_netStartAt && static_cast<int32_t>(millis() - s_netStartAt) >= 0) {
+    s_netStartAt = 0;
+    if (gState.usbPower) net::begin();
+  }
+  if (s_reinitAt && static_cast<int32_t>(millis() - s_reinitAt) >= 0) {
+    s_reinitAt = 0;
+    displayReinit();
+    if (s_screenOff) {
+      tft.sleep();
+    } else {
+      uiRender();
+      tft.setBrightness(power::brightness());
+    }
   }
   if (gState.pageSaveAt && static_cast<int32_t>(millis() - gState.pageSaveAt) >= 0) {
     gState.pageSaveAt = 0;
@@ -260,8 +283,12 @@ void loop() {
       gState.dirty = true;
     }
 
-    const uint32_t interval = uiNeedsAnimTick() ? 450 : (uiNeedsSecondTick() ? 1000 : 30000);
-    if (gState.dirty || now - s_lastRender >= interval) {
+    const uint32_t interval = uiNeedsSecondTick() ? 1000 : 30000;
+    static uint32_t s_lastAnim = 0;
+    if (uiNeedsAnimTick() && !gState.dirty && now - s_lastAnim >= 16 && now - s_lastRender < interval) {
+      s_lastAnim = now;
+      uiAnimFrame();  // partial redraw of just the charging battery
+    } else if (gState.dirty || now - s_lastRender >= interval) {
       s_lastRender = now;
       s_lastHeader = now;
       uiRender();
@@ -272,5 +299,5 @@ void loop() {
     }
   }
   maybeSleep();
-  delay(s_screenOff ? 40 : 8);
+  delay(s_screenOff ? 60 : 8);
 }

@@ -54,7 +54,7 @@ data class SettingsModel(
     val themeMode: Int = 0,
     /** Use the whole widget display for the stock watchlist. */
     val stocksMode: Boolean = false,
-    val photoSwapRb: Boolean = false,
+    val photoSwapRb: Boolean = true,
 )
 
 @Serializable
@@ -141,6 +141,26 @@ data class StepsModel(
     val valid: Boolean = false,
 )
 
+/** Highest widget type id the firmware knows. */
+const val LAST_WIDGET_TYPE = 20
+
+/** Same order as kZones in the firmware (the slot option is the index). */
+val WORLD_CITIES = listOf(
+    "London" to "Europe/London", "New York" to "America/New_York", "Los Angeles" to "America/Los_Angeles",
+    "Chicago" to "America/Chicago", "Berlin" to "Europe/Berlin", "Paris" to "Europe/Paris",
+    "Dubai" to "Asia/Dubai", "Singapore" to "Asia/Singapore", "Tokyo" to "Asia/Tokyo",
+    "Sydney" to "Australia/Sydney", "Hong Kong" to "Asia/Hong_Kong", "Toronto" to "America/Toronto",
+    "Moscow" to "Europe/Moscow", "Kathmandu" to "Asia/Kathmandu", "New Delhi" to "Asia/Kolkata", "UTC" to "UTC",
+)
+
+val PROGRESS_KINDS = listOf("Day", "Week", "Month", "Year")
+
+@Serializable
+data class CountdownModel(val label: String = "", val target: Long = 0)
+
+@Serializable
+data class AlarmModel(val epoch: Long = 0, val label: String = "")
+
 @Serializable
 data class PhoneBattery(
     val percent: Int = 0,
@@ -162,6 +182,8 @@ data class PersistedState(
     val notifications: NotificationModel = NotificationModel(),
     val media: MediaModel = MediaModel(),
     val phoneBattery: PhoneBattery = PhoneBattery(),
+    val countdown: CountdownModel = CountdownModel(),
+    val nextAlarm: AlarmModel = AlarmModel(),
     val deviceName: String = "",
     val photoPath: String = "",
     val lastSync: Long = 0,
@@ -226,5 +248,15 @@ fun widgetName(type: Int): String = when (type) {
     8 -> "Note"
     9 -> "Photo"
     10 -> "Phone battery"
+    11 -> "Analog clock"
+    12 -> "World clock"
+    13 -> "Day / year progress"
+    14 -> "Sunrise & sunset"
+    15 -> "Moon phase"
+    16 -> "Month calendar"
+    17 -> "Next alarm"
+    18 -> "Countdown"
+    19 -> "Widget status"
+    20 -> "Thought of the day"
     else -> "Empty"
 }

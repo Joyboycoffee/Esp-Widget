@@ -46,6 +46,17 @@ import dev.gourav.espwidget.AppGraph
 import dev.gourav.espwidget.data.AppState
 import dev.gourav.espwidget.data.SlotModel
 import dev.gourav.espwidget.data.widgetName
+import dev.gourav.espwidget.data.LAST_WIDGET_TYPE
+import dev.gourav.espwidget.data.WORLD_CITIES
+import dev.gourav.espwidget.data.PROGRESS_KINDS
+import dev.gourav.espwidget.data.CountdownModel
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.platform.LocalContext
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun LayoutScreen(state: AppState, onPreviewPage: (Int) -> Unit) {
@@ -221,7 +232,7 @@ private fun SlotEditor(
                                 menuOpen = false
                             },
                         )
-                        (0..10).forEach { type ->
+                        (0..LAST_WIDGET_TYPE).forEach { type ->
                             DropdownMenuItem(
                                 text = { Text(widgetName(type)) },
                                 onClick = {
@@ -259,6 +270,41 @@ private fun SlotEditor(
                 if (stockLabels.isEmpty()) {
                     Text("Add symbols in Settings → Markets first.", fontSize = 11.sp, color = Muted)
                 }
+            }
+            if (slot.type == 12) {
+                Spacer(Modifier.height(8.dp))
+                Text("City", fontSize = 10.sp, color = Muted, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(5.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                ) {
+                    WORLD_CITIES.forEachIndexed { option, city ->
+                        WideChip(city.first, slot.option == option) { onChange(slot.copy(option = option)) }
+                    }
+                }
+            }
+            if (slot.type == 13) {
+                Spacer(Modifier.height(8.dp))
+                Text("Progress of", fontSize = 10.sp, color = Muted, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(5.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PROGRESS_KINDS.forEachIndexed { option, kind ->
+                        WideChip(kind, slot.option % 4 == option) { onChange(slot.copy(option = option)) }
+                    }
+                }
+            }
+            if (slot.type == 18) {
+                Spacer(Modifier.height(8.dp))
+                CountdownEditor()
+            }
+            if (slot.type == 14) {
+                Spacer(Modifier.height(6.dp))
+                Text("Uses the location from Settings (same as weather).", fontSize = 11.sp, color = Muted)
+            }
+            if (slot.type == 17) {
+                Spacer(Modifier.height(6.dp))
+                Text("Shows the next alarm set in your phone's clock app.", fontSize = 11.sp, color = Muted)
             }
             if (slot.type == 8) {
                 Spacer(Modifier.height(8.dp))
@@ -310,5 +356,44 @@ private fun OptionChip(label: String, selected: Boolean, onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = if (selected) CardWhite else Ink, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+
+/** Name + date for the Countdown widget (one countdown, shared by every slot). */
+@Composable
+private fun CountdownEditor() {
+    val context = LocalContext.current
+    val current = AppGraph.repository.persisted.value.countdown
+    var label by remember { mutableStateOf(current.label) }
+    var target by remember { mutableStateOf(current.target) }
+    fun save() {
+        AppGraph.repository.update { it.copy(countdown = CountdownModel(label.trim().take(27), target)) }
+    }
+    Text("Countdown", fontSize = 10.sp, color = Muted, fontWeight = FontWeight.SemiBold)
+    Spacer(Modifier.height(5.dp))
+    OutlinedTextField(
+        value = label,
+        onValueChange = { label = it.take(27); save() },
+        label = { Text("What are you counting down to?") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(6.dp))
+    val zone = ZoneId.systemDefault()
+    val date = if (target > 0) Instant.ofEpochSecond(target).atZone(zone).toLocalDate() else null
+    OutlinedButton(onClick = {
+        val start = date ?: LocalDate.now().plusDays(7)
+        android.app.DatePickerDialog(
+            context,
+            { _, y, m, d ->
+                // Noon local time, so the day never slips across a time-zone edge.
+                target = LocalDate.of(y, m + 1, d).atTime(12, 0).atZone(zone).toEpochSecond()
+                save()
+            },
+            start.year, start.monthValue - 1, start.dayOfMonth,
+        ).show()
+    }) {
+        Text(date?.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy")) ?: "Pick a date", color = Ink)
     }
 }
