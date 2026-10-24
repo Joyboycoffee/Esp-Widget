@@ -101,7 +101,7 @@ fun LayoutScreen(state: AppState, onPreviewPage: (Int) -> Unit) {
                         )
                     }
                 }
-                if (pages.size < 5) {
+                if (pages.size < dev.gourav.espwidget.protocol.LayoutPayload.MAX_PAGES) {
                     IconButton(
                         onClick = {
                             AppGraph.repository.addPage()

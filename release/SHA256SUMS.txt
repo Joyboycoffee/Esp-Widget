@@ -1,4 +1,4 @@
-9eafe94e768f0274413d3af5bf9bb00b2cb7bbc7c9685a1c1eafaefda222224f  android/EspWidget-2.0.6-release.apk
+925e2bcef61f9b773baf43864221a2282f51ba7a58da5054706cd2d0668b7613  android/EspWidget-2.0.6-release.apk
 82e7a4838c90f02cb76ff702df167a6851a21d2859c0af2056fa54410196c737  desktop/ESPWidgetFlasher.exe
 9b2fa5e4af7cf282b2db5ed726b26bcca0aec7946eb3fdacc14444195ba754b3  firmware/bootloader.bin
 ac65f2f675f083e006d87facdd8e9396f685030b3bbbaba9417091b3379b5d8c  firmware/esp-widget-1.0.0-full.bin
@@ -10,6 +10,7 @@ d0a1959b995d8138f1681e1f39ad51c2a8b820cd6b9f8780372f828487cf916a  firmware/esp-w
 7ad369c8616083f0c22d7ad4f050d6d7727d65db13cb2886709c8110fc5a1438  firmware/esp-widget-keychain-2.0.6-build33-full.bin
 20738c423074b12898466939d23f5137c91b484a933b23b55bea795b92b8b734  firmware/esp-widget-keychain-2.0.6-build35-full.bin
 b83ae0f599e0fe66c0dc76ea5e856977011b6e69c1de6e6ee62d2ea7bc1311cf  firmware/esp-widget-keychain-2.0.6-build37-full.bin
-79299ff787e2da93b1672a37f5ac46abd206b5a79c22787c11853d36afd840ef  firmware/firmware.bin
-9616b2cd009b1cb17d069dc74c7b9c30e5e208f2b91670dcf6a823ce0796f51e  firmware/firmware-manifest.json
+dc82ddf0e45b6a2285179498f81ab1db05fe1a89bbbeefb89ade3b5b500e4804  firmware/esp-widget-keychain-2.0.6-build38-full.bin
+88a74d25dbb0755ee990d3f22011b838f49a69a55900bcb3635827de49c090fd  firmware/firmware.bin
+ab8cfc65d7f32dfdbe68aa0537e90c0f1423bb4f7c93660769d73a3f36d62f35  firmware/firmware-manifest.json
 b4405a679fd54fbadce6dab709d8b6cf65b5ac76ed0e4ccee9ae3801a1566dee  firmware/partitions.bin

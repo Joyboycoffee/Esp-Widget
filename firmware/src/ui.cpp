@@ -1695,7 +1695,7 @@ void drawDiag() {
   put("v%d.%d.%d  build %d", ESPW_VERSION_MAJOR, ESPW_VERSION_MINOR, ESPW_VERSION_PATCH, ESPW_BUILD);
   put("ADC pin: %d mV  (vbat %.2f V)", static_cast<int>(d.rawMv), d.vbat);
   put("cell valid %d  batt %d%% %dmV", d.voltageValid ? 1 : 0, gState.battery.percent, gState.battery.millivolts);
-  put("LED lit: red %s  blue %s", d.ledRed == 0 ? "yes" : "no", d.ledBlue == 0 ? "yes" : "no");
+  put("TP4056 %s  red %s  blue %s", (d.ledRed || d.ledBlue) ? "powered" : "unplugged", (d.ledRed || d.ledBlue) && !d.ledRed ? "lit" : "off", (d.ledRed || d.ledBlue) && !d.ledBlue ? "lit" : "off");
   put("USB rule: adc %d  led %d  host %d", d.byAdc ? 1 : 0, d.byLed ? 1 : 0, d.byHost ? 1 : 0);
   put("USB now %d   charging %d  full %d", gState.usbPower ? 1 : 0, gState.charging ? 1 : 0, gState.chargeFull ? 1 : 0);
   put("BLE act %d conn %d pair %d", gState.bleActive ? 1 : 0, gState.bleConnected ? 1 : 0, gState.pairingActive ? 1 : 0);

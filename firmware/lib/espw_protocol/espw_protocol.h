@@ -17,6 +17,7 @@ constexpr size_t kMaxFrame = kHeaderSize + kMaxPayload + kCrcSize;
 constexpr uint8_t kFragMarker = 0xF1;
 constexpr size_t kFragHeader = 5;    // marker, id, part, count, reserved
 constexpr uint8_t kMaxFragParts = 32;
+constexpr uint8_t kMaxPages = 10;  // pages the widget can hold
 
 enum class MsgType : uint8_t {
   Hello = 0x01,
@@ -243,7 +244,7 @@ struct PageConfig {
 
 struct LayoutPayload {
   uint8_t pages;
-  PageConfig page[5];
+  PageConfig page[kMaxPages];
   uint8_t version;
   uint8_t reserved[2];
 };
@@ -333,7 +334,7 @@ static_assert(sizeof(HelloAck) == 24, "HelloAck layout");
 static_assert(sizeof(TimePayload) == 8, "Time layout");
 static_assert(sizeof(WeatherPayload) == 58, "Weather layout");
 static_assert(sizeof(StockPayload) == 76, "Stock layout");
-static_assert(sizeof(LayoutPayload) == 89, "Layout layout");
+static_assert(sizeof(LayoutPayload) == 174, "Layout layout");
 static_assert(sizeof(SettingsPayload) == 8, "Settings layout");
 static_assert(sizeof(LocationPayload) == 24, "Location layout");
 static_assert(sizeof(StatusPayload) == 22, "Status layout");

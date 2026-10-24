@@ -39,9 +39,9 @@ data class PageConfig(val template: Int = 0, val slots: List<SlotConfig> = List(
 
 data class LayoutPayload(val pages: List<PageConfig>, val version: Int = 1) {
     fun encode(): ByteArray {
-        val buf = Wire.littleEndian(89)
+        val buf = Wire.littleEndian(SIZE)
         buf.put(pages.size.toByte())
-        for (page in 0 until 5) {
+        for (page in 0 until MAX_PAGES) {
             val config = pages.getOrNull(page) ?: PageConfig()
             buf.put(config.template.toByte())
             for (slot in 0 until 4) {
@@ -54,13 +54,17 @@ data class LayoutPayload(val pages: List<PageConfig>, val version: Int = 1) {
     }
 
     companion object {
+        /** Must match espw::kMaxPages in the firmware. */
+        const val MAX_PAGES = 10
+        const val SIZE = 1 + MAX_PAGES * 17 + 3
+
         fun decode(bytes: ByteArray): LayoutPayload? {
-            if (bytes.size < 89) return null
+            if (bytes.size < SIZE) return null
             val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
             val count = buf.get().toInt() and 0xFF
-            if (count !in 1..5) return null
+            if (count !in 1..MAX_PAGES) return null
             val pages = ArrayList<PageConfig>(count)
-            repeat(5) {
+            repeat(MAX_PAGES) {
                 val template = buf.get().toInt() and 0xFF
                 val slots = ArrayList<SlotConfig>(4)
                 repeat(4) {

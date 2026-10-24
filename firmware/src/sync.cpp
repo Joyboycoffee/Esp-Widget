@@ -23,7 +23,7 @@ uint16_t s_photoWritten = 0;
 bool s_photoOpen = false;
 
 bool validLayout(const espw::LayoutPayload& layout) {
-  if (layout.pages < 1 || layout.pages > 5) return false;
+  if (layout.pages < 1 || layout.pages > espw::kMaxPages) return false;
   for (uint8_t p = 0; p < layout.pages; ++p) {
     if (layout.page[p].template_id > espw::TemplateGrid) return false;
     for (uint8_t s = 0; s < 4; ++s) {

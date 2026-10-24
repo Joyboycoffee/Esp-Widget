@@ -89,7 +89,7 @@ class WidgetRepository(private val context: Context, private val scope: Coroutin
     }
 
     fun addPage() = update { current ->
-        if (current.layout.pages.size >= 5) current
+        if (current.layout.pages.size >= dev.gourav.espwidget.protocol.LayoutPayload.MAX_PAGES) current
         else current.copy(
             layout = current.layout.copy(
                 pages = current.layout.pages + PageModel(0, List(4) { SlotModel() }),

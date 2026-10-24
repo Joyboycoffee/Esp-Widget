@@ -47,8 +47,9 @@ void screenOff() {
 void screenOn() {
   if (!s_screenOff) return;
   s_screenOff = false;
-  tft.wakeup();
-  delay(120);  // ST7789 needs ~120 ms after sleep-out before drawing
+  // A full controller re-init is more reliable than a bare sleep-out: a
+  // missed wake command left the screen black until a reboot.
+  displayReinit();
   ble::setLowPower(false);
   uiRender();  // paint the current content while the backlight is still dark
   displayFadeIn(power::brightness());
@@ -219,6 +220,15 @@ void setup() {
     displayFadeIn(power::brightness());
   }
 
+  {
+    // Tell the user when the last restart was not a normal one, so a crash
+    // can be told apart from the screen simply being off.
+    const esp_reset_reason_t why = esp_reset_reason();
+    if (why == ESP_RST_BROWNOUT) stateSetToast("Restarted: power dip (brownout)", 6000);
+    else if (why == ESP_RST_PANIC) stateSetToast("Restarted after a crash", 6000);
+    else if (why == ESP_RST_TASK_WDT || why == ESP_RST_INT_WDT || why == ESP_RST_WDT)
+      stateSetToast("Restarted: firmware froze", 6000);
+  }
   lowerCpuClock();
   ble::begin();
   net::begin();

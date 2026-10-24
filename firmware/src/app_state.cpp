@@ -77,7 +77,7 @@ void stateDefaultLayout() {
 void stateLoad() {
   espw::LayoutPayload saved{};
   if (gPrefs.getBytes("layout", &saved, sizeof(saved)) == sizeof(saved)) {
-    if (saved.pages >= 1 && saved.pages <= 5 && saved.version >= 1) {
+    if (saved.pages >= 1 && saved.pages <= espw::kMaxPages && saved.version >= 1) {
       bool ok = true;
       for (uint8_t p = 0; p < saved.pages && ok; ++p) {
         if (saved.page[p].template_id > espw::TemplateGrid) ok = false;
