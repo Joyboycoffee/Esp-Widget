@@ -22,14 +22,19 @@ uint16_t s_photoTotal = 0;
 uint16_t s_photoWritten = 0;
 bool s_photoOpen = false;
 
-bool validLayout(const espw::LayoutPayload& layout) {
-  if (layout.pages < 1 || layout.pages > espw::kMaxPages) return false;
+// Repairs instead of rejecting: a widget type this firmware doesn't know (for
+// example from a newer app) becomes an empty slot. Rejecting the whole layout
+// used to mean NO change from the app reached the widget at all.
+bool validLayout(espw::LayoutPayload& layout) {
+  if (layout.pages < 1) return false;
+  if (layout.pages > espw::kMaxPages) layout.pages = espw::kMaxPages;
   for (uint8_t p = 0; p < layout.pages; ++p) {
-    if (layout.page[p].template_id > espw::TemplateGrid) return false;
+    auto& page = layout.page[p];
+    if (page.template_id > espw::TemplateRows) page.template_id = espw::TemplateHeroPair;
     for (uint8_t s = 0; s < 4; ++s) {
-      const auto& slot = layout.page[p].slots[s];
-      if (slot.type != 0xFF && slot.type >= espw::WidgetCount) return false;
-      if (slot.accent > espw::AccentRose) return false;
+      auto& slot = page.slots[s];
+      if (slot.type != 0xFF && slot.type >= espw::WidgetCount) slot.type = 0xFF;
+      if (slot.accent > espw::AccentRose) slot.accent = 0;
     }
   }
   return true;

@@ -133,6 +133,18 @@ fun DevicePreview(
                         val config = pages.getOrNull(page) ?: PageModel()
                         if (stocksMode) {
                             StocksPreview(validStocks, page)
+                        } else if (config.template == 2) {
+                            MiniSlot(state, config.slots.getOrNull(0) ?: SlotModel(), true, Modifier.fillMaxWidth().height(190.dp))
+                        } else if (config.template == 3) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                MiniSlot(state, config.slots.getOrNull(0) ?: SlotModel(), false, Modifier.weight(1f).height(190.dp))
+                                MiniSlot(state, config.slots.getOrNull(1) ?: SlotModel(), false, Modifier.weight(1f).height(190.dp))
+                            }
+                        } else if (config.template == 4) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                MiniSlot(state, config.slots.getOrNull(0) ?: SlotModel(), true, Modifier.fillMaxWidth().height(92.dp))
+                                MiniSlot(state, config.slots.getOrNull(1) ?: SlotModel(), true, Modifier.fillMaxWidth().height(92.dp))
+                            }
                         } else if (config.template == 1) {
                             val w = (222.dp - 6.dp) / 2
                             val h = (222.dp - 22.dp - 6.dp) / 2

@@ -81,9 +81,22 @@ enum WidgetType : uint8_t {
 };
 
 enum PageTemplate : uint8_t {
-  TemplateHeroPair = 0,
-  TemplateGrid = 1,
+  TemplateHeroPair = 0,  // one wide card + two small
+  TemplateGrid = 1,      // 2 x 2
+  TemplateSingle = 2,    // one card fills the screen
+  TemplateColumns = 3,   // two tall cards side by side
+  TemplateRows = 4,      // two wide cards stacked
 };
+
+inline uint8_t templateSlots(uint8_t t) {
+  switch (t) {
+    case TemplateGrid: return 4;
+    case TemplateSingle: return 1;
+    case TemplateColumns:
+    case TemplateRows: return 2;
+    default: return 3;
+  }
+}
 
 enum Accent : uint8_t {
   AccentPeach = 0,

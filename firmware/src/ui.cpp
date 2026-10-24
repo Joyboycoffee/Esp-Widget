@@ -1375,10 +1375,10 @@ void drawThought(const Rect& r, uint16_t accent, bool hero) {
   }
 }
 
-void drawWidget(const espw::SlotConfig& slot, const Rect& r, bool hero) {
+void drawWidget(const espw::SlotConfig& slot, const Rect& cardRect, const Rect& r, bool hero) {
   const uint16_t accent = accentColor(slot.accent);
-  card(r, accent, hero);
-  cv->setClipRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4);
+  card(cardRect, accent, hero);
+  cv->setClipRect(cardRect.x + 2, cardRect.y + 2, cardRect.w - 4, cardRect.h - 4);
   switch (slot.type) {
     case espw::WidgetClock: drawClock(r, accent, hero); break;
     case espw::WidgetWeather: drawWeather(r, accent, hero); break;
@@ -1389,7 +1389,7 @@ void drawWidget(const espw::SlotConfig& slot, const Rect& r, bool hero) {
     case espw::WidgetCalendar: drawCalendar(r, accent, hero); break;
     case espw::WidgetSteps: drawSteps(r, accent, hero); break;
     case espw::WidgetText: drawText(r, accent, hero, slot.option); break;
-    case espw::WidgetPhoto: drawPhoto(r, accent, hero); break;
+    case espw::WidgetPhoto: drawPhoto(cardRect, accent, hero); break;  // photos fill the whole card
     case espw::WidgetPhoneBattery: drawPhoneBattery(r, accent, hero); break;
     case espw::WidgetAnalogClock: drawAnalog(r, accent, hero); break;
     case espw::WidgetWorldClock: drawWorldClock(r, accent, hero, slot.option); break;
@@ -1499,7 +1499,8 @@ void pageDots() { pageDotsN(statePageCount(), stateCurrentPage()); }
 
 // ------------------------------------------------------------------ pages --
 struct PageGeometry {
-  Rect slots[4];
+  Rect slots[4];    // the card
+  Rect content[4];  // where the widget draws inside it (centred in tall cards)
   bool hero[4];
   int count;
   int bandSplit[2];  // y where band 1 and band 2 start
@@ -1508,27 +1509,66 @@ struct PageGeometry {
 PageGeometry geometry(uint8_t page) {
   PageGeometry g{};
   const auto& cfg = gState.layout.page[page];
-  const int w = (SCREEN_W - UI_MARGIN * 2 - UI_GAP) / 2;
-  if (cfg.template_id == espw::TemplateGrid) {
-    const int h = (SCREEN_H - UI_CONTENT_Y - UI_BOTTOM - UI_GAP) / 2;
-    for (int i = 0; i < 4; ++i) {
-      g.slots[i] = Rect{UI_MARGIN + (i % 2) * (w + UI_GAP), UI_CONTENT_Y + (i / 2) * (h + UI_GAP), w, h};
-      g.hero[i] = false;
-    }
-    g.count = 4;
-    g.bandSplit[1] = UI_CONTENT_Y + h + 4;
-  } else {
-    const int smallY = UI_CONTENT_Y + UI_HERO_H + UI_GAP;
-    const int smallH = SCREEN_H - UI_BOTTOM - smallY;
-    g.slots[0] = Rect{UI_MARGIN, UI_CONTENT_Y, SCREEN_W - UI_MARGIN * 2, UI_HERO_H};
-    g.slots[1] = Rect{UI_MARGIN, smallY, w, smallH};
-    g.slots[2] = Rect{UI_MARGIN + w + UI_GAP, smallY, w, smallH};
-    g.hero[0] = true;
-    g.hero[1] = g.hero[2] = false;
-    g.count = 3;
-    g.bandSplit[1] = UI_CONTENT_Y + UI_HERO_H + 4;
-  }
+  const int fullW = SCREEN_W - UI_MARGIN * 2;
+  const int w = (fullW - UI_GAP) / 2;
+  const int fullH = SCREEN_H - UI_CONTENT_Y - UI_BOTTOM;
   g.bandSplit[0] = UI_CONTENT_Y - 2;
+  switch (cfg.template_id) {
+    case espw::TemplateGrid: {
+      const int h = (fullH - UI_GAP) / 2;
+      for (int i = 0; i < 4; ++i) {
+        g.slots[i] = Rect{UI_MARGIN + (i % 2) * (w + UI_GAP), UI_CONTENT_Y + (i / 2) * (h + UI_GAP), w, h};
+        g.content[i] = g.slots[i];
+        g.hero[i] = false;
+      }
+      g.count = 4;
+      g.bandSplit[1] = UI_CONTENT_Y + h + 4;
+      break;
+    }
+    case espw::TemplateSingle: {
+      g.slots[0] = Rect{UI_MARGIN, UI_CONTENT_Y, fullW, fullH};
+      g.content[0] = Rect{UI_MARGIN, UI_CONTENT_Y + (fullH - UI_HERO_H) / 2, fullW, UI_HERO_H};
+      g.hero[0] = true;
+      g.count = 1;
+      g.bandSplit[1] = 130;
+      break;
+    }
+    case espw::TemplateColumns: {
+      const int smallH = 94;  // what small widgets are designed for
+      for (int i = 0; i < 2; ++i) {
+        g.slots[i] = Rect{UI_MARGIN + i * (w + UI_GAP), UI_CONTENT_Y, w, fullH};
+        g.content[i] = Rect{g.slots[i].x, UI_CONTENT_Y + (fullH - smallH) / 2, w, smallH};
+        g.hero[i] = false;
+      }
+      g.count = 2;
+      g.bandSplit[1] = 130;
+      break;
+    }
+    case espw::TemplateRows: {
+      const int h = (fullH - UI_GAP) / 2;
+      for (int i = 0; i < 2; ++i) {
+        g.slots[i] = Rect{UI_MARGIN, UI_CONTENT_Y + i * (h + UI_GAP), fullW, h};
+        g.content[i] = g.slots[i];
+        g.hero[i] = true;
+      }
+      g.count = 2;
+      g.bandSplit[1] = UI_CONTENT_Y + h + 4;
+      break;
+    }
+    default: {
+      const int smallY = UI_CONTENT_Y + UI_HERO_H + UI_GAP;
+      const int smallH = SCREEN_H - UI_BOTTOM - smallY;
+      g.slots[0] = Rect{UI_MARGIN, UI_CONTENT_Y, fullW, UI_HERO_H};
+      g.slots[1] = Rect{UI_MARGIN, smallY, w, smallH};
+      g.slots[2] = Rect{UI_MARGIN + w + UI_GAP, smallY, w, smallH};
+      for (int i = 0; i < 3; ++i) g.content[i] = g.slots[i];
+      g.hero[0] = true;
+      g.hero[1] = g.hero[2] = false;
+      g.count = 3;
+      g.bandSplit[1] = UI_CONTENT_Y + UI_HERO_H + 4;
+      break;
+    }
+  }
   return g;
 }
 
@@ -1748,7 +1788,8 @@ void renderBand(int y, int h, bool headerOnly) {
       for (int i = 0; i < g.count; ++i) {
         const Rect& r = g.slots[i];
         if (r.y + r.h + 3 <= y || r.y >= y + h) continue;
-        drawWidget(cfg.slots[i], Rect{r.x, Y(r.y), r.w, r.h}, g.hero[i]);
+        const Rect& c = g.content[i];
+        drawWidget(cfg.slots[i], Rect{r.x, Y(r.y), r.w, r.h}, Rect{c.x, Y(c.y), c.w, c.h}, g.hero[i]);
       }
       if (y + h >= SCREEN_H) pageDots();
       drawToast();
@@ -1799,7 +1840,7 @@ void uiApplyRotation() {
 bool uiNeedsAnimTick() {
   if (s_diag || stocksMode() || !gState.phoneBatteryValid || !gState.phoneBattery.charging) return false;
   const auto& cfg = gState.layout.page[stateCurrentPage()];
-  const int count = (cfg.template_id == espw::TemplateGrid) ? 4 : 3;
+  const int count = espw::templateSlots(cfg.template_id);
   for (int i = 0; i < count; ++i) {
     if (cfg.slots[i].type == espw::WidgetPhoneBattery) return true;
   }
@@ -1815,7 +1856,7 @@ void uiAnimFrame() {
   const PageGeometry g = geometry(page);
   for (int i = 0; i < g.count; ++i) {
     if (cfg.slots[i].type != espw::WidgetPhoneBattery) continue;
-    const Rect& r = g.slots[i];
+    const Rect& r = g.content[i];
     const int y0 = r.y + (g.hero[i] ? 12 : 10);
     const int h = g.hero[i] ? 56 : 34;
     themeApply(darkTheme());
@@ -1833,7 +1874,7 @@ bool uiNeedsSecondTick() {
   if (!seconds) return false;
   const uint8_t page = stateCurrentPage();
   const auto& cfg = gState.layout.page[page];
-  const int count = (cfg.template_id == espw::TemplateGrid) ? 4 : 3;
+  const int count = espw::templateSlots(cfg.template_id);
   for (int i = 0; i < count; ++i) {
     if (cfg.slots[i].type == espw::WidgetClock || cfg.slots[i].type == espw::WidgetAnalogClock) return true;
   }

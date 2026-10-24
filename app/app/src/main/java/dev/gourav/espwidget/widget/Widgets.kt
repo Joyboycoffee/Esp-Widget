@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.widget.RemoteViews
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -67,8 +69,14 @@ class EspDashboardWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         AppGraph.init(context)
-        val state = AppGraph.repository.state.first()
-        provideContent { Dashboard(state) }
+        // Collect the live state inside the composition. Capturing one snapshot
+        // here (as before) froze the widget: Glance keeps the session alive and
+        // updateAll() only recomposes it, so the page counter never changed.
+        val repo = AppGraph.repository
+        provideContent {
+            val state by repo.state.collectAsState()
+            Dashboard(state)
+        }
     }
 
     companion object {

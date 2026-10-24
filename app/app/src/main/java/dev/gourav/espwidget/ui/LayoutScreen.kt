@@ -141,31 +141,39 @@ fun LayoutScreen(state: AppState, onPreviewPage: (Int) -> Unit) {
             )
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                TemplateChip(
-                    label = "Hero + 2",
-                    selected = current?.template == 0,
-                    modifier = Modifier.weight(1f),
-                    onClick = { AppGraph.repository.setTemplate(page, 0) },
-                )
-                TemplateChip(
-                    label = "Grid 2 × 2",
-                    selected = current?.template == 1,
-                    modifier = Modifier.weight(1f),
-                    onClick = { AppGraph.repository.setTemplate(page, 1) },
-                )
+            // Five page shapes. Two rows of chips so the labels stay readable.
+            val shapes = listOf(
+                0 to "Hero + 2", 1 to "Grid 2 × 2", 2 to "Full screen",
+                3 to "Side by side", 4 to "Top & bottom",
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                shapes.chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        row.forEach { (id, name) ->
+                            TemplateChip(
+                                label = name,
+                                selected = (current?.template ?: 0) == id,
+                                modifier = Modifier.weight(1f),
+                                onClick = { AppGraph.repository.setTemplate(page, id) },
+                            )
+                        }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
             }
         }
-        val slots = if (current?.template == 1) 4 else 3
+        val slots = when (current?.template) { 1 -> 4; 2 -> 1; 3, 4 -> 2; else -> 3 }
         items(slots) { index ->
             val slot = current?.slots?.getOrNull(index) ?: SlotModel()
             SlotEditor(
                 slot = slot,
                 stockLabels = state.persisted.sources.stockSymbols,
-                label = if (current?.template == 1) {
-                    listOf("Top left", "Top right", "Bottom left", "Bottom right")[index]
-                } else {
-                    listOf("Hero card", "Small card 1", "Small card 2")[index]
+                label = when (current?.template) {
+                    1 -> listOf("Top left", "Top right", "Bottom left", "Bottom right")[index]
+                    2 -> "Full screen"
+                    3 -> listOf("Left", "Right")[index]
+                    4 -> listOf("Top", "Bottom")[index]
+                    else -> listOf("Hero card", "Small card 1", "Small card 2")[index]
                 },
                 onChange = { newSlot -> AppGraph.repository.setSlot(page, index, newSlot) },
             )

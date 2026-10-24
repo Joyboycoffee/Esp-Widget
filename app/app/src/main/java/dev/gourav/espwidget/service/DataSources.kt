@@ -142,7 +142,19 @@ object StockSource {
                 val meta = result["meta"]?.jsonObject ?: return@runCatching null
                 val price = meta["regularMarketPrice"]?.jsonPrimitive?.content?.toDoubleOrNull()
                     ?: return@runCatching null
-                val changePercent = meta["regularMarketChangePercent"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: 0.0
+                // The chart endpoint's meta usually has no change percent, which
+                // left every stock at +0.00%. Work it out from the daily closes.
+                val dailyCloses = result["indicators"]?.jsonObject
+                    ?.get("quote")?.jsonArray?.firstOrNull()?.jsonObject
+                    ?.get("close")?.jsonArray
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull?.toDoubleOrNull() }
+                    ?.filter { it > 0.0 }
+                    ?: emptyList()
+                val previousClose = meta["regularMarketPreviousClose"]?.jsonPrimitive?.content?.toDoubleOrNull()
+                    ?: dailyCloses.getOrNull(dailyCloses.size - 2)
+                val changePercent = meta["regularMarketChangePercent"]?.jsonPrimitive?.content?.toDoubleOrNull()
+                    ?: previousClose?.takeIf { it > 0 }?.let { (price - it) / it * 100.0 }
+                    ?: 0.0
                 val currency = meta["currency"]?.jsonPrimitive?.content ?: ""
                 val closes = result["indicators"]?.jsonObject
                     ?.get("quote")?.jsonArray?.firstOrNull()?.jsonObject
@@ -159,13 +171,18 @@ object StockSource {
                 } else {
                     List(24) { 0 }
                 }
-                val marketOpen = runCatching {
+                val now = System.currentTimeMillis() / 1000
+                val inSession = runCatching {
                     val regular = meta["currentTradingPeriod"]?.jsonObject?.get("regular")?.jsonObject
                     val start = regular?.get("start")?.jsonPrimitive?.content?.toLongOrNull()
                     val end = regular?.get("end")?.jsonPrimitive?.content?.toLongOrNull()
-                    val now = System.currentTimeMillis() / 1000
                     start != null && end != null && now in start..end
-                }.getOrDefault(isFallbackMarketOpen(configured))
+                }.getOrDefault(false)
+                // A trade in the last 15 minutes also means the market is open
+                // (covers Yahoo sending yesterday's trading period).
+                val lastTrade = meta["regularMarketTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+                val marketOpen = inSession || (now - lastTrade in 0L..900L) ||
+                    (lastTrade == 0L && isFallbackMarketOpen(configured))
                 StockModel(
                     symbol = configured.substringBefore('.').take(11),
                     priceCents = Math.round(price * 100).toInt(),

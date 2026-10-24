@@ -80,7 +80,7 @@ void stateLoad() {
     if (saved.pages >= 1 && saved.pages <= espw::kMaxPages && saved.version >= 1) {
       bool ok = true;
       for (uint8_t p = 0; p < saved.pages && ok; ++p) {
-        if (saved.page[p].template_id > espw::TemplateGrid) ok = false;
+        if (saved.page[p].template_id > espw::TemplateRows) ok = false;
         for (uint8_t s = 0; s < 4; ++s) {
           auto& slot = saved.page[p].slots[s];
           if (slot.type == espw::WidgetSteps) slot.type = espw::WidgetBattery;
