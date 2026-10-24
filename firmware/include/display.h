@@ -58,6 +58,15 @@ class LGFX_ST7789 : public lgfx::LGFX_Device {
     }
     setPanel(&_panel_instance);
   }
+
+  // Hardware-reset and re-initialise the panel controller only. init() would also
+  // re-initialise the backlight PWM, which is not needed after a supply glitch and
+  // is the part that could leave the backlight dead.
+  void reinitPanelOnly() {
+    _panel_instance.setLight(nullptr);
+    init();
+    _panel_instance.setLight(&_light_instance);
+  }
 };
 
 extern LGFX_ST7789 tft;

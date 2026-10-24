@@ -35,7 +35,7 @@ void displayBegin() {
 // firmware keeps running. Re-initialising the controller recovers it.
 void displayReinit() {
   tft.setBrightness(0);
-  tft.init();
+  tft.reinitPanelOnly();
   tft.setRotation(gState.settings.rotation);
   tft.setBrightness(0);
 }

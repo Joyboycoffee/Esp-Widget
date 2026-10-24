@@ -32,7 +32,6 @@ bool s_screenOff = false;
 uint32_t s_screenOffSince = 0;
 int s_tapCount = 0;
 bool s_reinitPending = false;
-uint32_t s_reinitAt = 0;   // panel re-init after a charger plug/unplug
 uint32_t s_netStartAt = 0; // Wi-Fi start, delayed until the supply has settled
 uint32_t s_lastTapRelease = 0;
 
@@ -59,13 +58,39 @@ void screenOn() {
   displayFadeIn(power::brightness());
 }
 
+// Brings the panel back after a supply glitch (unplugging the charger, the radio
+// waking up on a weak battery, ...): the firmware keeps running but the display
+// controller can lose its set-up and show nothing. Safe to call at any time.
+void displayRecover() {
+  displayReinit();
+  s_reinitPending = false;
+  if (s_screenOff) {
+    s_screenOff = false;
+    ble::setLowPower(false);
+  }
+  gState.dirty = true;
+  uiRender();
+  displayFadeIn(power::brightness());
+  gState.lastActivityMs = millis();
+}
+
+// Re-check the panel a couple of times after anything that can dip the supply.
+uint32_t s_retryAt[2] = {0, 0};
+void scheduleRecovery() {
+  const uint32_t now = millis();
+  s_retryAt[0] = now + 1500;
+  s_retryAt[1] = now + 6000;
+}
+
 // Commands from the phone (wake the screen / deep sleep). Run here, in loop(),
 // so the BLE callback never blocks and the ACK has already been sent.
 void handleRemoteCommands() {
   if (gState.wakeRequested) {
     gState.wakeRequested = false;
     gState.lastActivityMs = millis();
-    if (s_screenOff) screenOn();
+    // Always a full recovery, not just a wake: the screen may be dark while the
+    // firmware still thinks it is on.
+    displayRecover();
   }
   if (gState.screenOffRequested) {
     gState.screenOffRequested = false;
@@ -141,7 +166,9 @@ void handleTouch() {
       uiToggleDiag();  // any tap closes the diagnostics page
     } else if (taps == 3) {
       uiToggleDiag();  // triple tap opens it
-    } else if (taps >= 4) {
+    } else if (taps >= 5) {
+      displayRecover();  // escape hatch: 5 taps force a display reset
+    } else if (taps == 4) {
       net::toggle();
     } else if (taps == 1) {
       uiNextPage(1);
@@ -167,7 +194,7 @@ void handlePowerTransitions() {
     stateSetToast("On battery - Bluetooth only", 2200);
     net::stop();
   }
-  s_reinitAt = millis() + 1200;
+  scheduleRecovery();
   gState.lastActivityMs = millis();
 }
 
@@ -273,15 +300,23 @@ void loop() {
     s_netStartAt = 0;
     if (gState.usbPower) net::begin();
   }
-  if (s_reinitAt && static_cast<int32_t>(millis() - s_reinitAt) >= 0) {
-    s_reinitAt = 0;
-    if (s_screenOff) {
-      s_reinitPending = true;  // done on the next wake
-    } else {
-      displayReinit();
-      uiRender();
-      tft.setBrightness(power::brightness());
+  for (auto& at : s_retryAt) {
+    if (at && static_cast<int32_t>(millis() - at) >= 0) {
+      at = 0;
+      if (s_screenOff) {
+        s_reinitPending = true;  // done on the next wake
+      } else {
+        displayReinit();
+        uiRender();
+        tft.setBrightness(power::brightness());
+      }
     }
+  }
+  // Phone connects / disconnects can dip the supply on a weak battery too.
+  static bool s_lastBle = false;
+  if (gState.bleConnected != s_lastBle) {
+    s_lastBle = gState.bleConnected;
+    if (!gState.usbPower) scheduleRecovery();
   }
   if (gState.pageSaveAt && static_cast<int32_t>(millis() - gState.pageSaveAt) >= 0) {
     gState.pageSaveAt = 0;
