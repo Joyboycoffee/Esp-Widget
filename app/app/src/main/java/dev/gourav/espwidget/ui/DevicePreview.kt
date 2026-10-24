@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Grain
@@ -174,7 +177,14 @@ fun DevicePreview(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = {
+                        val to = ((page - 1) % count + count) % count
+                        selected = to
+                        onPageChange(to)
+                    }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Rounded.ChevronLeft, "Previous page", tint = Muted)
+                    }
                     (0 until count).forEach { index ->
                         Box(
                             modifier = Modifier
@@ -186,6 +196,13 @@ fun DevicePreview(
                                     onPageChange(index)
                                 },
                         )
+                    }
+                    IconButton(onClick = {
+                        val to = (page + 1) % count
+                        selected = to
+                        onPageChange(to)
+                    }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Rounded.ChevronRight, "Next page", tint = Muted)
                     }
                 }
             }

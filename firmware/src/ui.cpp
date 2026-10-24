@@ -1158,6 +1158,7 @@ void uiNextPage(int delta) {
   if (stocksMode()) {
     const int pages = stockPageCount();
     s_stockPage = ((s_stockPage + delta) % pages + pages) % pages;
+    gState.statusDirty = true;
     renderAll();
     gState.dirty = false;
     gState.lastActivityMs = millis();
@@ -1178,10 +1179,13 @@ void uiNextPage(int delta) {
   gState.lastActivityMs = millis();
 }
 
+int uiShownPage() { return stocksMode() ? s_stockPage : stateCurrentPage(); }
+
 void uiSetPage(int page) {
   if (stocksMode()) {
     const int pages = stockPageCount();
     s_stockPage = ((page % pages) + pages) % pages;
+    gState.statusDirty = true;
   } else {
     const uint8_t count = statePageCount();
     if (page < 0 || page >= count || page == stateCurrentPage()) return;

@@ -101,6 +101,12 @@ class SyncEngine(
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         registerSteps()
+        // If Android dropped the notification listener binding, ask for it back.
+        runCatching {
+            android.service.notification.NotificationListenerService.requestRebind(
+                android.content.ComponentName(context, NotificationRelay::class.java),
+            )
+        }
         repo.update { it.copy(steps = it.steps.copy(goal = it.sources.stepsGoal.toLong())) }
 
         scope.launch {
@@ -525,6 +531,34 @@ class SyncEngine(
         repo.update { it.copy(sources = it.sources.copy(wifiSsid = "")) }
         repo.log("Wi-Fi network forgotten")
         ble.send(Msg.STATUS_REQ)
+    }
+
+    /** How many pages the widget cycles through right now (matches the firmware). */
+    fun widgetPageCount(state: PersistedState = repo.persisted.value): Int {
+        if (!state.settings.stocksMode) return state.layout.pages.size.coerceAtLeast(1)
+        val n = state.stocks.count { it.valid }
+        return if (n >= 2) n + 1 else 1
+    }
+
+    /** Move the widget's display one page left (-1) or right (+1), wrapping around. */
+    fun stepWidgetPage(delta: Int): Boolean {
+        if (!ble.connection.value.connected) return false
+        val state = repo.persisted.value
+        val count = widgetPageCount(state)
+        val current = (repo.link.value.status?.page ?: state.settings.currentPage).coerceIn(0, count - 1)
+        val next = ((current + delta) % count + count) % count
+        setWidgetPage(next)
+        // Optimistic: the widget confirms with its own status push a moment later.
+        repo.updateLink { link -> link.copy(status = link.status?.copy(page = next)) }
+        return true
+    }
+
+    /** Send a notification to the widget right now, without waiting for the debounced sync. */
+    fun pushNotificationNow(model: dev.gourav.espwidget.data.NotificationModel) {
+        if (!ble.connection.value.connected) return
+        if (model.valid) sendNotification(model)
+        else ble.send(Msg.NOTIFICATION, NotificationPayload("", "", "", 0, 0).encode())
+        lastSentSnapshot = lastSentSnapshot?.copy(notifications = model)
     }
 
     /** Make the widget show [page] (used when swiping the on-screen preview). */

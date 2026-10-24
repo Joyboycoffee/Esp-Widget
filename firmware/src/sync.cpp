@@ -72,7 +72,7 @@ void sendHello() {
 
 void sendStatus() {
   espw::StatusPayload status{};
-  status.page = stateCurrentPage();
+  status.page = static_cast<uint8_t>(uiShownPage());
   status.ble_connected = gState.bleConnected ? 1 : 0;
   status.wifi_state = gState.wifiState;
   status.rssi = gState.wifiRssi;

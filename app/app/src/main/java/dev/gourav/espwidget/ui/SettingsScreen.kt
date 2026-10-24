@@ -416,7 +416,7 @@ fun SettingsScreen(state: AppState, onRequestPermissions: () -> Unit) {
         }
         item {
             Column(modifier = Modifier.padding(bottom = 18.dp)) {
-                Text("ESP Widget 1.2", style = MaterialTheme.typography.labelSmall)
+                Text("ESP Widget 1.3", style = MaterialTheme.typography.labelSmall)
                 Text(
                     "Protocol v1 · 240 × 240 · ESP32-C3",
                     style = MaterialTheme.typography.bodyMedium,

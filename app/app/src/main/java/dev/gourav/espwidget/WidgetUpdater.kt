@@ -23,7 +23,7 @@ object WidgetUpdater {
                 scope.launch {
                     for (ignored in requests) {
                         runCatching { EspDashboardWidget().updateAll(app) }
-                        delay(5_000)
+                        delay(1_000)
                     }
                 }
             }

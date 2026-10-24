@@ -51,6 +51,7 @@ class NotificationRelay : NotificationListenerService() {
             .maxByOrNull { it.postTime }
         if (newest == null) {
             repo.clearNotifications()
+            pushNow(NotificationModel())
             return
         }
         val extras = newest.notification.extras
@@ -62,15 +63,20 @@ class NotificationRelay : NotificationListenerService() {
         val body = (extras.getCharSequence(Notification.EXTRA_TEXT)
             ?: extras.getCharSequence(Notification.EXTRA_BIG_TEXT))?.toString()?.trim().orEmpty()
         val count = maxOf(active.size, 1)
-        repo.setNotification(
-            NotificationModel(
-                app = app.take(15),
-                title = title.take(39),
-                body = body.take(55),
-                count = count,
-                updated = newest.postTime / 1000,
-                valid = true,
-            ),
+        val model = NotificationModel(
+            app = app.take(15),
+            title = title.take(39),
+            body = body.take(55),
+            count = count,
+            updated = newest.postTime / 1000,
+            valid = true,
         )
+        repo.setNotification(model)
+        pushNow(model)
+    }
+
+    /** Straight to the widget over Bluetooth; the debounced sync would add a delay. */
+    private fun pushNow(model: NotificationModel) {
+        runCatching { AppGraph.engine.pushNotificationNow(model) }
     }
 }

@@ -12,7 +12,11 @@ import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.LocalContext
 import androidx.glance.LocalSize
+import androidx.glance.action.ActionParameters
+import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
+import androidx.glance.appwidget.action.ActionCallback
+import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.AndroidRemoteViews
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
@@ -70,6 +74,18 @@ class EspDashboardWidget : GlanceAppWidget() {
         val SMALL = DpSize(110.dp, 110.dp)
         val WIDE = DpSize(250.dp, 110.dp)
         val LARGE = DpSize(250.dp, 250.dp)
+    }
+}
+
+private val DeltaKey = ActionParameters.Key<Int>("delta")
+
+/** Left/right arrow on the home-screen widget: flips the ESP's display. */
+class StepPageAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        AppGraph.init(context)
+        val delta = parameters[DeltaKey] ?: return
+        AppGraph.engine.stepWidgetPage(delta)
+        dev.gourav.espwidget.WidgetUpdater.refresh(context)
     }
 }
 
@@ -133,7 +149,13 @@ private fun Dashboard(state: AppState) {
             } else {
                 WeatherLine(p)
                 Spacer(GlanceModifier.defaultWeight())
-                DeviceLine(state)
+                Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    DeviceLine(state)
+                    Spacer(GlanceModifier.defaultWeight())
+                    ArrowButton("‹", -1)
+                    Spacer(GlanceModifier.width(4.dp))
+                    ArrowButton("›", 1)
+                }
             }
         }
     }
@@ -149,7 +171,44 @@ private fun Header(state: AppState, context: Context, wide: Boolean) {
             ),
         )
         Spacer(GlanceModifier.defaultWeight())
-        if (wide) StatusPill(state)
+        if (wide) {
+            PageControls(state)
+            Spacer(GlanceModifier.width(8.dp))
+            StatusPill(state)
+        }
+    }
+}
+
+@Composable
+private fun ArrowButton(label: String, delta: Int) {
+    Box(
+        modifier = GlanceModifier
+            .size(30.dp)
+            .background(c(card))
+            .cornerRadius(15.dp)
+            .clickable(actionRunCallback<StepPageAction>(actionParametersOf(DeltaKey to delta))),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = TextStyle(color = c(ink), fontSize = 16.sp, fontWeight = FontWeight.Bold))
+    }
+}
+
+/** ‹ 2/5 › : changes what the ESP display is showing. */
+@Composable
+private fun PageControls(state: AppState) {
+    val p = state.persisted
+    val count = if (p.settings.stocksMode) {
+        p.stocks.count { it.valid }.let { if (it >= 2) it + 1 else 1 }
+    } else {
+        p.layout.pages.size.coerceAtLeast(1)
+    }
+    val page = ((state.link.status?.page ?: p.settings.currentPage).coerceIn(0, count - 1)) + 1
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        ArrowButton("‹", -1)
+        Spacer(GlanceModifier.width(4.dp))
+        Text("$page/$count", style = TextStyle(color = c(muted), fontSize = 11.sp, fontWeight = FontWeight.Medium))
+        Spacer(GlanceModifier.width(4.dp))
+        ArrowButton("›", 1)
     }
 }
 
