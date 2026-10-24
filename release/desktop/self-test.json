@@ -4,15 +4,15 @@
   "ok": true,
   "firmware": {
     "version": "2.0.6",
-    "file": "esp-widget-keychain-2.0.6-build39-full.bin",
-    "size": 2220832,
-    "sha256": "b4b81c05217843989d887fefee5759533d4a1f319516a7bee94abb9a81b43bca",
+    "file": "esp-widget-keychain-2.0.6-build41-full.bin",
+    "size": 2225056,
+    "sha256": "3554dd93d1d4deb4cb6f3b58eb753cd6f615ae47dae9e20209b5dac86c585f00",
     "chip": "esp32c3",
     "offset": "0x0"
   },
   "esptool": "4.7.0",
   "pyserial": "3.5",
   "tkinter": "8.6",
-  "icon": "C:\\Users\\Gourav\\AppData\\Local\\Temp\\_MEI000029f42\\resources\\app.ico",
+  "icon": "C:\\Users\\Gourav\\AppData\\Local\\Temp\\_MEI000011ac2\\resources\\app.ico",
   "errors": []
 }

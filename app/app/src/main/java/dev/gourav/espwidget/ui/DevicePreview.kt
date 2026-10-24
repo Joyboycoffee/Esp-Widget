@@ -670,8 +670,8 @@ private fun ExtraPreview(type: Int, option: Int, accent: Int, hero: Boolean, sta
                 }
             }
         }
-        14 -> MiniInfo("Sunrise & sunset", "☀", "from your location", hero)
-        15 -> {
+        14 -> if (option == 1) SkyArcPreview(false, color, now, hero) else MiniInfo("Sunrise & sunset", "☀", "from your location", hero)
+        15 -> if (option == 1) SkyArcPreview(true, color, now, hero) else {
             val age = ((System.currentTimeMillis() / 1000.0 - 947182440.0) / 86400.0).mod(29.530588853)
             val phase = age / 29.530588853
             val lit = ((1 - kotlin.math.cos(2 * Math.PI * phase)) * 50).toInt()
@@ -831,5 +831,43 @@ private fun StocksPreview(stocks: List<StockModel>, page: Int) {
         )
         Spacer(Modifier.height(8.dp))
         Sparkline(stock.spark, trend, Modifier.fillMaxWidth().height(50.dp))
+    }
+}
+
+
+/** Phone-side picture of the arc style: a curve over a horizon bar with the body where it is now (rough times). */
+@Composable
+private fun SkyArcPreview(isMoon: Boolean, color: Color, now: java.time.ZonedDateTime, hero: Boolean) {
+    val nowMin = now.hour * 60f + now.minute
+    val rise = 6.5f * 60f
+    val dur = 12f * 60f
+    val u = if (isMoon) {
+        val age = ((System.currentTimeMillis() / 1000.0 - 947182440.0) / 86400.0).mod(29.530588853)
+        ((nowMin - (rise + age * 48.8)).mod(1440.0)).toFloat()
+    } else nowMin - rise
+    val up = u in 0f..dur
+    val t = (u / dur).coerceIn(0f, 1f)
+    val line = Color(0xFFD9D2C8)
+    Canvas(Modifier.fillMaxSize()) {
+        val pad = 14f
+        val barY = size.height - 22f
+        val cx = size.width / 2f
+        val rx = size.width / 2f - pad
+        val ry = (barY - 18f).coerceAtMost(rx * 0.8f)
+        val steps = 40
+        for (i in 0..steps) {
+            val f = i / steps.toFloat()
+            val a = Math.PI.toFloat() * f
+            val p = Offset(cx - kotlin.math.cos(a) * rx, barY - kotlin.math.sin(a) * ry)
+            if (up && f <= t) drawCircle(color, 3f, p) else if (i % 2 == 0) drawCircle(line, 2f, p)
+        }
+        drawRoundRect(line, Offset(pad - 4f, barY), androidx.compose.ui.geometry.Size(size.width - 2 * pad + 8f, 6f), androidx.compose.ui.geometry.CornerRadius(3f))
+        val br = if (hero) 12f else 9f
+        val a = Math.PI.toFloat() * t
+        val body = if (up) Offset(cx - kotlin.math.cos(a) * rx, barY - kotlin.math.sin(a) * ry)
+                   else Offset(if (u < 0f) cx - rx else cx + rx, barY - br / 2)
+        val bodyColor = if (isMoon) Color(0xFFF6E6B8) else Color(0xFFE6B25C)
+        if (up && !isMoon) drawCircle(bodyColor.copy(alpha = 0.3f), br + 6f, body)
+        drawCircle(if (up) bodyColor else Color(0xFFB8B2BC), br, body)
     }
 }

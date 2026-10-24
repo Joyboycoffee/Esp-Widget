@@ -42,7 +42,7 @@ class LGFX_ST7789 : public lgfx::LGFX_Device {
       cfg.dummy_read_bits = 1;
       cfg.readable = false;
       cfg.invert = true;
-      cfg.rgb_order = true;
+      cfg.rgb_order = false;  // panel is BGR: true gave red<->blue swapped everywhere
       cfg.dlen_16bit = false;
       cfg.bus_shared = false;
       _panel_instance.config(cfg);

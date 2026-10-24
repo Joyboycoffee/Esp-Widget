@@ -79,7 +79,7 @@ void stateDefaultLayout();
 void stateSetToast(const char* text, uint32_t durationMs = 1800);
 
 inline uint8_t statePageCount() {
-  return gState.layout.pages < 1 ? 1 : (gState.layout.pages > 5 ? 5 : gState.layout.pages);
+  return gState.layout.pages < 1 ? 1 : (gState.layout.pages > espw::kMaxPages ? espw::kMaxPages : gState.layout.pages);
 }
 inline uint8_t stateCurrentPage() {
   return gState.settings.current_page < statePageCount() ? gState.settings.current_page : 0;

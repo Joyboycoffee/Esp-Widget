@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -29,6 +31,12 @@ class WidgetRepository(private val context: Context, private val scope: Coroutin
     val state: StateFlow<AppState> = combine(_persisted, _link) { persisted, link ->
         AppState(persisted, link)
     }.stateIn(scope, SharingStarted.Eagerly, AppState())
+
+    /** Same as [state] without the chatty log / Wi-Fi scan fields, so the live preview doesn't redraw for every log line. */
+    val previewState: StateFlow<AppState> = state
+        .map { it.copy(link = it.link.copy(log = emptyList(), wifiScan = emptyList(), error = null)) }
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, AppState())
 
     init {
         scope.launch {

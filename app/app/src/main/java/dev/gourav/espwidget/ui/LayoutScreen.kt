@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.gourav.espwidget.AppGraph
 import dev.gourav.espwidget.data.AppState
 import dev.gourav.espwidget.data.SlotModel
@@ -60,6 +61,7 @@ import java.time.format.DateTimeFormatter
 
 @Composable
 fun LayoutScreen(state: AppState, onPreviewPage: (Int) -> Unit) {
+    val previewState by AppGraph.repository.previewState.collectAsStateWithLifecycle()
     val pages = state.persisted.layout.pages
     var page by rememberSaveable { mutableIntStateOf(state.persisted.settings.currentPage) }
     LaunchedEffect(pages.size) { if (page >= pages.size) page = 0 }
@@ -130,7 +132,7 @@ fun LayoutScreen(state: AppState, onPreviewPage: (Int) -> Unit) {
         }
         item {
             DevicePreview(
-                state,
+                previewState,
                 controlledPage = page,
                 showStocksMode = false,
                 onPageChange = {
@@ -305,6 +307,15 @@ private fun SlotEditor(
             if (slot.type == 18) {
                 Spacer(Modifier.height(8.dp))
                 CountdownEditor()
+            }
+            if (slot.type == 14 || slot.type == 15) {
+                Spacer(Modifier.height(8.dp))
+                Text("Style", fontSize = 10.sp, color = Muted, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(5.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    WideChip("Text", slot.option != 1) { onChange(slot.copy(option = 0)) }
+                    WideChip("Arc", slot.option == 1) { onChange(slot.copy(option = 1)) }
+                }
             }
             if (slot.type == 14) {
                 Spacer(Modifier.height(6.dp))

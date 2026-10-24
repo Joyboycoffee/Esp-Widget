@@ -35,10 +35,9 @@ inline int Y(int y) { return y - s_oy; }
 
 // Full-screen "stocks only" mode (settings flag 0x20) and dark theme (0x10).
 inline bool stocksMode() { return (gState.settings.flags & 0x20) != 0; }
-// The panel shows red and blue swapped relative to true colour (the diagnostics
-// swatches prove it) while the UI palette is tuned for it, so photos always need
-// their red/blue exchanged to look right.
-inline bool photoSwapRB() { return true; }
+// Red/blue order is fixed at the panel (display.h rgb_order), so every colour,
+// photos included, is drawn as-is. Kept as a switch only for debugging.
+inline bool photoSwapRB() { return false; }
 inline bool darkTheme() { return (gState.settings.flags & 0x10) != 0; }
 int s_stockPage = 0;
 
@@ -1022,7 +1021,11 @@ void hhmm(double localMin, char* out, size_t cap) {
   formatClock(asEpoch, out, cap);
 }
 
-void drawSun(const Rect& r, uint16_t accent, bool hero) {
+void skyArc(const Rect& r, uint16_t accent, bool hero, float t, bool up, bool leftSide, bool isMoon,
+            float phase, const char* title, const char* extra, const char* leftTxt, const char* rightTxt,
+            const char* centerTxt);
+
+void drawSun(const Rect& r, uint16_t accent, bool hero, uint8_t option) {
   if (!clockReady()) return notReady(r, hero, "Waiting for time");
   const double lat = gState.location.lat_e6 / 1e6, lon = gState.location.lon_e6 / 1e6;
   int y, mo, d, h, mi, s, wd;
@@ -1040,6 +1043,12 @@ void drawSun(const Rect& r, uint16_t accent, bool hero) {
   const double nowMin = h * 60 + mi + s / 60.0;
   const float t = static_cast<float>(constrain((nowMin - rise) / (set - rise), -0.05, 1.05));
   const bool up = nowMin >= rise && nowMin <= set;
+  if (option == 1) {
+    const bool leftSide = nowMin < rise;
+    skyArc(r, accent, hero, t, up, leftSide, false, 0.0f, up ? "Sun is up" : "Sun is down",
+           hero ? len : "", riseS, setS, "");
+    return;
+  }
   if (hero) {
     // Arc of the sun's path with today's position.
     const int cx = r.x + r.w / 2, cy = r.y + 70, R = 54;
@@ -1104,8 +1113,71 @@ void moonDisc(int cx, int cy, int R, float phase) {
   cv->drawCircle(cx, cy, R, C_LINE);
 }
 
-void drawMoon(const Rect& r, uint16_t accent, bool hero) {
-  (void)accent;
+
+// "Path across the sky" style shared by the sun and moon widgets: a curve over a
+// horizon bar with the body sitting where it is right now. [t] runs 0 (rise) to
+// 1 (set); when the body is below the horizon it waits at the end it will use next.
+void skyArc(const Rect& r, uint16_t accent, bool hero, float t, bool up, bool leftSide, bool isMoon,
+            float phase, const char* title, const char* extra, const char* leftTxt, const char* rightTxt,
+            const char* centerTxt) {
+  const int pad = hero ? 24 : 16;
+  const int topPad = hero ? 30 : 26;
+  const int rx = r.w / 2 - pad;
+  int ry = r.h - topPad - 26;
+  ry = min(ry, static_cast<int>(rx * 0.8f));
+  if (ry < 14) ry = 14;
+  const int shift = max(0, (r.h - (topPad + ry + 26)) / 2);
+  const int barY = r.y + topPad + ry + shift;
+  const int cx = r.x + r.w / 2;
+  const float tt = constrain(t, 0.0f, 1.0f);
+
+  cv->setFont(&Fredoka12);
+  cv->setTextColor(C_MUTED, C_CARD);
+  cv->drawString(title, r.x + 10, r.y + 8);
+  if (extra && extra[0]) cv->drawRightString(extra, r.x + r.w - 10, r.y + 8);
+
+  const int steps = hero ? 56 : 44;
+  for (int i = 0; i <= steps; ++i) {
+    const float f = static_cast<float>(i) / steps;
+    const float a = PI * f;
+    const int px = cx - static_cast<int>(cosf(a) * rx), py = barY - static_cast<int>(sinf(a) * ry);
+    if (up && f <= tt) cv->fillCircle(px, py, 2, accent);
+    else if ((i & 1) == 0) cv->fillCircle(px, py, 1, mixColor(C_MUTED, C_CARD, 55));
+  }
+  cv->fillRoundRect(r.x + 10, barY, r.w - 20, 4, 2, C_LINE);
+  cv->fillCircle(cx - rx, barY + 2, 3, C_MUTED);
+  cv->fillCircle(cx + rx, barY + 2, 3, C_MUTED);
+
+  const int br = hero ? 9 : 7;
+  int bx, by;
+  if (up) {
+    const float a = PI * tt;
+    bx = cx - static_cast<int>(cosf(a) * rx);
+    by = barY - static_cast<int>(sinf(a) * ry);
+  } else {
+    bx = leftSide ? cx - rx : cx + rx;
+    by = barY - br / 2;
+  }
+  if (isMoon) {
+    moonDisc(bx, by, br, phase);
+  } else if (up) {
+    cv->fillCircle(bx, by, br + 4, mixColor(C_SUN, C_CARD, 28));
+    cv->fillCircle(bx, by, br, C_SUN);
+  } else {
+    cv->fillCircle(bx, by, br - 2, mixColor(C_MUTED, C_CARD, 60));
+  }
+
+  cv->setFont(&Fredoka12);
+  cv->setTextColor(C_INK, C_CARD);
+  cv->drawString(leftTxt, r.x + 8, barY + 9);
+  cv->drawRightString(rightTxt, r.x + r.w - 8, barY + 9);
+  if (hero && centerTxt && centerTxt[0]) {
+    cv->setTextColor(C_MUTED, C_CARD);
+    cv->drawCenterString(centerTxt, cx, barY + 9);
+  }
+}
+
+void drawMoon(const Rect& r, uint16_t accent, bool hero, uint8_t option) {
   if (!clockReady()) return notReady(r, hero, "Waiting for time");
   const double synodic = 29.530588853;
   const double days = (static_cast<double>(espclock::epochUtc()) - 947182440.0) / 86400.0;
@@ -1121,6 +1193,31 @@ void drawMoon(const Rect& r, uint16_t accent, bool hero) {
   snprintf(lit, sizeof(lit), "%d%% lit", illum);
   if (toFull == 0) strlcpy(next, "Full tonight", sizeof(next));
   else snprintf(next, sizeof(next), toFull == 1 ? "Full in %d day" : "Full in %d days", toFull);
+  if (option == 1) {
+    const double lat = gState.location.lat_e6 / 1e6, lon = gState.location.lon_e6 / 1e6;
+    int y, mo, d, h, mi, sec, wd;
+    espclock::localTime(y, mo, d, h, mi, sec, wd);
+    double rise = 360, set = 1080;
+    if (sunTimes(y, mo, d, lat, lon, rise, set)) {
+      const double tz = localOffsetSec() / 60.0;
+      rise += tz;
+      set += tz;
+    }
+    // Rough moon times: the moon rises about 49 min later each day than at new moon.
+    const double dur = constrain(set - rise, 420.0, 1020.0);
+    const double moonRise = fmod(rise + age * 48.8 + 1440.0, 1440.0);
+    const double nowMin = h * 60 + mi + sec / 60.0;
+    const double u = fmod(nowMin - moonRise + 1440.0, 1440.0);
+    const bool up = u <= dur;
+    const bool leftSide = u > dur + (1440.0 - dur) / 2.0;
+    char rs[16], ss[16], title[24];
+    hhmm(moonRise, rs, sizeof(rs));
+    hhmm(moonRise + dur, ss, sizeof(ss));
+    snprintf(title, sizeof(title), up ? "Moon is up" : "Moon is down");
+    skyArc(r, accent, hero, static_cast<float>(u / dur), up, leftSide, true, phase, title, hero ? lit : "", rs, ss,
+           hero ? name : "");
+    return;
+  }
   if (hero) {
     moonDisc(r.x + 58, r.y + r.h / 2, 36, phase);
     cv->setFont(&Fredoka20);
@@ -1394,8 +1491,8 @@ void drawWidget(const espw::SlotConfig& slot, const Rect& cardRect, const Rect& 
     case espw::WidgetAnalogClock: drawAnalog(r, accent, hero); break;
     case espw::WidgetWorldClock: drawWorldClock(r, accent, hero, slot.option); break;
     case espw::WidgetProgress: drawProgress(r, accent, hero, slot.option); break;
-    case espw::WidgetSun: drawSun(r, accent, hero); break;
-    case espw::WidgetMoon: drawMoon(r, accent, hero); break;
+    case espw::WidgetSun: drawSun(r, accent, hero, slot.option); break;
+    case espw::WidgetMoon: drawMoon(r, accent, hero, slot.option); break;
     case espw::WidgetMonth: drawMonth(r, accent, hero); break;
     case espw::WidgetAlarm: drawAlarm(r, accent, hero); break;
     case espw::WidgetCountdown: drawCountdown(r, accent, hero); break;
@@ -1747,8 +1844,7 @@ void drawDiag() {
   put("Page %d of %d", stateCurrentPage() + 1, statePageCount());
   cv->setTextColor(C_MUTED, C_BG);
   cv->drawString("Tap to close", 8, Y(6 + row * 17));
-  // Colour check: these should read red, green, blue, white. If red looks
-  // blue, turn on "Fix photo colours" in the app.
+  // Colour check: these should read red, green, blue, white, left to right.
   const int sy = Y(6 + row * 17);
   cv->fillRect(140, sy, 22, 14, cv->color888(255, 0, 0));
   cv->fillRect(164, sy, 22, 14, cv->color888(0, 255, 0));

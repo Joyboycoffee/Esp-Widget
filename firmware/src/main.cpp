@@ -31,6 +31,7 @@ bool s_longHandled = false;
 bool s_screenOff = false;
 uint32_t s_screenOffSince = 0;
 int s_tapCount = 0;
+bool s_reinitPending = false;
 uint32_t s_reinitAt = 0;   // panel re-init after a charger plug/unplug
 uint32_t s_netStartAt = 0; // Wi-Fi start, delayed until the supply has settled
 uint32_t s_lastTapRelease = 0;
@@ -39,17 +40,20 @@ void screenOff() {
   if (s_screenOff) return;
   s_screenOff = true;
   s_screenOffSince = millis();
+  // Backlight off only. Putting the panel controller to sleep and re-initialising
+  // it on wake left the screen black (the app said connected, but neither the
+  // button nor "Wake screen" lit it) - the backlight is what costs the power.
   displayFadeOut(power::brightness());
-  tft.sleep();             // panel controller into sleep mode (saves a few mA)
   ble::setLowPower(true);  // radio wakes ~4x/s instead of ~25x/s
 }
 
 void screenOn() {
   if (!s_screenOff) return;
   s_screenOff = false;
-  // A full controller re-init is more reliable than a bare sleep-out: a
-  // missed wake command left the screen black until a reboot.
-  displayReinit();
+  if (s_reinitPending) {  // a charger glitch happened while the screen was dark
+    s_reinitPending = false;
+    displayReinit();
+  }
   ble::setLowPower(false);
   uiRender();  // paint the current content while the backlight is still dark
   displayFadeIn(power::brightness());
@@ -271,10 +275,10 @@ void loop() {
   }
   if (s_reinitAt && static_cast<int32_t>(millis() - s_reinitAt) >= 0) {
     s_reinitAt = 0;
-    displayReinit();
     if (s_screenOff) {
-      tft.sleep();
+      s_reinitPending = true;  // done on the next wake
     } else {
+      displayReinit();
       uiRender();
       tft.setBrightness(power::brightness());
     }

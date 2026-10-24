@@ -31,6 +31,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.gourav.espwidget.AppGraph
 import dev.gourav.espwidget.data.AppState
 import java.time.LocalTime
@@ -45,6 +47,7 @@ fun HomeScreen(
     onOpenLayout: () -> Unit,
     onGrantBluetooth: () -> Unit,
 ) {
+    val previewState by AppGraph.repository.previewState.collectAsStateWithLifecycle()
     val hour = LocalTime.now().hour
     val greeting = when {
         hour < 5 -> "Still up?"
@@ -156,7 +159,7 @@ fun HomeScreen(
         item {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                 DevicePreview(
-                    state,
+                    previewState,
                     modifier = Modifier.fillMaxWidth(),
                     onPageChange = { page ->
                         if (AppGraph.initialized) AppGraph.engine.setWidgetPage(page)
