@@ -6,13 +6,13 @@
     "version": "2.0.6",
     "file": "esp-widget-keychain-2.0.6-build45-full.bin",
     "size": 2226928,
-    "sha256": "4009a44b0726f0fda30d77494d9d611221d4d2df0b804587a83d3bc7d0b62269",
+    "sha256": "053723e613355da16e044ccd50946d3ee570cf376db734e55ab19e611c98f284",
     "chip": "esp32c3",
     "offset": "0x0"
   },
   "esptool": "4.7.0",
   "pyserial": "3.5",
   "tkinter": "8.6",
-  "icon": "C:\\Users\\Gourav\\AppData\\Local\\Temp\\_MEI000051e02\\resources\\app.ico",
+  "icon": "C:\\Users\\Gourav\\AppData\\Local\\Temp\\_MEI000067002\\resources\\app.ico",
   "errors": []
 }
