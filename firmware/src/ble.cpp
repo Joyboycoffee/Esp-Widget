@@ -26,6 +26,7 @@ bool s_advertising = false;
 bool s_connected = false;
 uint32_t s_advertiseUntil = 0;
 uint32_t s_passkey = 0;
+uint32_t s_pairStart = 0;
 // NimBLE callbacks run on the BLE host task. Sending from there raced with
 // sends from loop() (shared sequence/fragment counters) and corrupted frames,
 // so callbacks only raise these flags and loop() does the actual work.
@@ -75,6 +76,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
     s_passkey = 100000 + (esp_random() % 900000);
     gState.pairingPasskey = s_passkey;
     gState.pairingActive = true;
+    s_pairStart = millis();
     gState.dirty = true;
     Serial.printf("[BLE] pairing passkey %06lu\n", static_cast<unsigned long>(s_passkey));
     return s_passkey;
@@ -82,6 +84,9 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 
   void onAuthenticationComplete(NimBLEConnInfo& info) override {
     if (!info.isEncrypted()) {
+      // Some phones report completion before the encrypted flag is set. The
+      // overlay is cleared anyway as soon as the app writes anything (only an
+      // encrypted link can write), so just log it here.
       Serial.println("[BLE] authentication: link not encrypted yet");
       return;
     }
@@ -96,6 +101,14 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 class RxCallbacks : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo& info) override {
     (void)info;
+    // The app can only write over an encrypted link, so a write means pairing
+    // is done even if onAuthenticationComplete never reported it.
+    if (gState.pairingActive) {
+      gState.pairingActive = false;
+      gState.dirty = true;
+      s_pendingHello = true;
+      stateSetToast("Phone paired");
+    }
     const NimBLEAttValue value = characteristic->getValue();
     if (value.length() == 0 || value.length() > sizeof(Chunk::data)) return;
     Chunk chunk{};
@@ -218,6 +231,23 @@ void setLowPower(bool low) {
 }
 
 void loop() {
+  // Pairing overlay safety net: clear it once the link is actually encrypted
+  // (some phones never deliver a usable auth-complete callback), or after 90 s.
+  if (gState.pairingActive) {
+    bool done = millis() - s_pairStart > 90000;
+    if (!done && s_connected && s_server) {
+      static uint32_t s_lastCheck = 0;
+      if (millis() - s_lastCheck > 250) {
+        s_lastCheck = millis();
+        done = s_server->getPeerInfoByHandle(s_connHandle).isEncrypted();
+        if (done) s_pendingHello = true;
+      }
+    }
+    if (done) {
+      gState.pairingActive = false;
+      gState.dirty = true;
+    }
+  }
   if (s_pendingConnParams && s_connected && s_server) {
     s_pendingConnParams = false;
     if (s_lowPower) {

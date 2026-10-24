@@ -1,14 +1,14 @@
 {
     "name":  "ESP Widget Keychain",
     "version":  "2.0.6",
-    "build":  43,
-    "built_utc":  "2026-10-24T08:34:13Z",
+    "build":  44,
+    "built_utc":  "2026-10-24T08:42:23Z",
     "chip":  "esp32c3",
     "flash_mode":  "dio",
     "flash_freq":  "80m",
     "flash_size":  "4MB",
     "offset":  "0x0",
-    "file":  "esp-widget-keychain-2.0.6-build43-full.bin",
-    "size":  2225824,
-    "sha256":  "e85554129244f49637dfe724f684c02fc8bca1772e8230dc60600cde467cb47c"
+    "file":  "esp-widget-keychain-2.0.6-build44-full.bin",
+    "size":  2226224,
+    "sha256":  "a3383b0cb3737ce0cffab5fd322bc3835646523f4725f4989590436c6654415d"
 }
