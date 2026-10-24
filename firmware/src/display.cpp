@@ -33,11 +33,9 @@ void displayBegin() {
 // Plugging in / unplugging the charger can glitch the panel (a supply dip
 // while the TP4056 switches over), leaving a frozen picture even though the
 // firmware keeps running. Re-initialising the controller recovers it.
-void displayReinit() {
-  tft.setBrightness(0);
-  tft.reinitPanelOnly();
+void displayReinit(bool hard) {
+  tft.reinitPanel(hard);
   tft.setRotation(gState.settings.rotation);
-  tft.setBrightness(0);
 }
 
 void displayFadeIn(uint8_t target) {

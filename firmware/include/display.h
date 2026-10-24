@@ -59,12 +59,14 @@ class LGFX_ST7789 : public lgfx::LGFX_Device {
     setPanel(&_panel_instance);
   }
 
-  // Hardware-reset and re-initialise the panel controller only. init() would also
-  // re-initialise the backlight PWM, which is not needed after a supply glitch and
-  // is the part that could leave the backlight dead.
-  void reinitPanelOnly() {
+  // Re-send the panel set-up. soft = no reset pulse and no screen clear: on a
+  // healthy panel nothing visible changes, on one that browned out it restores
+  // the settings (the caller then repaints). hard = full reset + clear.
+  // The backlight PWM is never touched, so the screen never blinks dark.
+  void reinitPanel(bool hard) {
     _panel_instance.setLight(nullptr);
-    init();
+    if (hard) init();
+    else init_without_reset(false);
     _panel_instance.setLight(&_light_instance);
   }
 };
@@ -72,7 +74,7 @@ class LGFX_ST7789 : public lgfx::LGFX_Device {
 extern LGFX_ST7789 tft;
 
 void displayBegin();
-void displayReinit();
+void displayReinit(bool hard = false);
 void displayFadeIn(uint8_t target);
 void displayFadeOut(uint8_t from);
 void displaySleepHold();

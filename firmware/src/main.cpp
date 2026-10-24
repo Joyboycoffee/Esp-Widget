@@ -49,20 +49,34 @@ void screenOff() {
 void screenOn() {
   if (!s_screenOff) return;
   s_screenOff = false;
-  if (s_reinitPending) {  // a charger glitch happened while the screen was dark
+  if (s_reinitPending) {  // a supply glitch happened while the screen was dark
     s_reinitPending = false;
-    displayReinit();
+    displayReinit(false);
   }
   ble::setLowPower(false);
   uiRender();  // paint the current content while the backlight is still dark
   displayFadeIn(power::brightness());
 }
 
-// Brings the panel back after a supply glitch (unplugging the charger, the radio
-// waking up on a weak battery, ...): the firmware keeps running but the display
-// controller can lose its set-up and show nothing. Safe to call at any time.
-void displayRecover() {
-  displayReinit();
+// Supply dips (charger plugged/unplugged, the radio waking on a weak battery)
+// can make the display controller lose its set-up while the ESP keeps running.
+// heal() re-sends the set-up without a reset or clear and repaints: invisible on
+// a healthy screen, fixes a broken one. Never touches the backlight.
+void heal() {
+  if (s_screenOff) {
+    s_reinitPending = true;  // done on the next wake
+    return;
+  }
+  displayReinit(false);
+  gState.dirty = true;
+  uiRender();
+  s_lastRender = millis();
+}
+
+// 5 taps: full reset of the panel (the only path that blanks the screen).
+void hardRecover() {
+  tft.setBrightness(0);
+  displayReinit(true);
   s_reinitPending = false;
   if (s_screenOff) {
     s_screenOff = false;
@@ -74,12 +88,13 @@ void displayRecover() {
   gState.lastActivityMs = millis();
 }
 
-// Re-check the panel a couple of times after anything that can dip the supply.
-uint32_t s_retryAt[2] = {0, 0};
+// Heal a couple of times after anything that can dip the supply.
+uint32_t s_retryAt[3] = {0, 0, 0};
 void scheduleRecovery() {
   const uint32_t now = millis();
-  s_retryAt[0] = now + 1500;
-  s_retryAt[1] = now + 6000;
+  s_retryAt[0] = now + 400;
+  s_retryAt[1] = now + 2000;
+  s_retryAt[2] = now + 6000;
 }
 
 // Commands from the phone (wake the screen / deep sleep). Run here, in loop(),
@@ -88,9 +103,8 @@ void handleRemoteCommands() {
   if (gState.wakeRequested) {
     gState.wakeRequested = false;
     gState.lastActivityMs = millis();
-    // Always a full recovery, not just a wake: the screen may be dark while the
-    // firmware still thinks it is on.
-    displayRecover();
+    if (s_screenOff) screenOn();
+    else heal();  // the screen may look dark while the firmware thinks it is on
   }
   if (gState.screenOffRequested) {
     gState.screenOffRequested = false;
@@ -99,10 +113,9 @@ void handleRemoteCommands() {
   if (gState.pageRequested >= 0) {
     const int page = gState.pageRequested;
     gState.pageRequested = -1;
-    if (!s_screenOff) {
-      uiSetPage(page);
-      s_lastRender = millis();
-    }
+    if (s_screenOff) screenOn();
+    uiSetPage(page);
+    s_lastRender = millis();
   }
   if (gState.sleepRequested && static_cast<int32_t>(millis() - gState.sleepAt) >= 0) {
     gState.sleepRequested = false;
@@ -167,7 +180,7 @@ void handleTouch() {
     } else if (taps == 3) {
       uiToggleDiag();  // triple tap opens it
     } else if (taps >= 5) {
-      displayRecover();  // escape hatch: 5 taps force a display reset
+      hardRecover();  // escape hatch: 5 taps force a full display reset
     } else if (taps == 4) {
       net::toggle();
     } else if (taps == 1) {
@@ -303,13 +316,7 @@ void loop() {
   for (auto& at : s_retryAt) {
     if (at && static_cast<int32_t>(millis() - at) >= 0) {
       at = 0;
-      if (s_screenOff) {
-        s_reinitPending = true;  // done on the next wake
-      } else {
-        displayReinit();
-        uiRender();
-        tft.setBrightness(power::brightness());
-      }
+      heal();
     }
   }
   // Phone connects / disconnects can dip the supply on a weak battery too.
@@ -338,6 +345,13 @@ void loop() {
       s_lastAnim = now;
       uiAnimFrame();  // partial redraw of just the charging battery
     } else if (gState.dirty || now - s_lastRender >= interval) {
+      // On battery, re-send the panel set-up every ~30 s as well, so a glitch
+      // nobody saw coming heals itself (invisible on a healthy screen).
+      static uint32_t s_lastHeal = 0;
+      if (!gState.usbPower && now - s_lastHeal >= 30000) {
+        s_lastHeal = now;
+        displayReinit(false);
+      }
       s_lastRender = now;
       s_lastHeader = now;
       uiRender();

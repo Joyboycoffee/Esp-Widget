@@ -366,7 +366,6 @@ void handleFrame(uint8_t type, const uint8_t* payload, uint16_t len, uint16_t se
           gState.screenOffRequested = true;
         } else if (payload[0] == espw::CmdSetPage) {
           gState.pageRequested = len >= 2 ? static_cast<int8_t>(payload[1]) : -1;
-          gState.wakeRequested = true;
         } else if (payload[0] == espw::CmdDeepSleep) {
           gState.sleepRequested = true;
           gState.sleepAt = millis() + 600;
