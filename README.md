@@ -4,6 +4,8 @@ A 240 × 240 pastel desk widget on an ESP32-C3, paired with an Android app that 
 
 The firmware and app share one versioned, CRC-protected BLE protocol. The Android side also ships ten matching home-screen widgets rendered with Jetpack Glance.
 
+**[1-Click Web USB Installer](https://joyboycoffee.github.io/Esp-Widget/)** • **[Latest Release (Build 45)](https://github.com/Joyboycoffee/Esp-Widget/releases/tag/v2.0.6)** • **[Android APK](https://github.com/Joyboycoffee/Esp-Widget/releases/download/v2.0.6/EspWidget-2.0.6-release.apk)** • **[Windows Flasher](https://github.com/Joyboycoffee/Esp-Widget/releases/download/v2.0.6/ESPWidgetFlasher.exe)**
+
 ## What is in this repository
 
 ```
