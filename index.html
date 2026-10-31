@@ -7,6 +7,25 @@
   <meta name="description" content="1-Click Web USB / Serial Firmware Installer for 240x240 ESP32-C3 Smart Desk Widget">
   <meta name="theme-color" content="#0d0f14">
 
+  <!-- Web Serial Polyfill for Mobile Browsers (WebUSB Fallback) -->
+  <script type="module">
+    if (!('serial' in navigator) || !navigator.serial) {
+      if ('usb' in navigator) {
+        try {
+          const { serial } = await import("https://unpkg.com/web-serial-polyfill@1.0.15/dist/serial.js");
+          Object.defineProperty(navigator, 'serial', {
+            value: serial,
+            writable: true,
+            configurable: true
+          });
+          console.log("[ESP Widget] Web Serial polyfill active via WebUSB for Android mobile Chrome");
+        } catch (err) {
+          console.warn("[ESP Widget] Could not load web-serial-polyfill:", err);
+        }
+      }
+    }
+  </script>
+
   <!-- ESP Web Tools -->
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
 
@@ -462,6 +481,18 @@
           <span class="step-num">03</span>
           <div><b>Automatic Write:</b> The flasher will automatically write the bootloader, partition table, and full Build 45 application binary at <code>0x00000000</code>. Once verified, the device restarts ready to sync!</div>
         </div>
+      </div>
+
+      <!-- ANDROID MOBILE TIP -->
+      <div style="background: rgba(126, 184, 218, 0.08); border: 1px solid rgba(126, 184, 218, 0.2); border-radius: 8px; padding: 12px 14px; font-size: 0.80rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px;">
+        <div style="font-weight: 700; color: var(--sky);">📱 Flashing from an Android Phone?</div>
+        <div>
+          Chrome on Android does not support the native Web Serial API out of the box (it uses WebUSB). If your ESP does not appear in Chrome's device prompt:
+        </div>
+        <ul style="padding-left: 18px; margin-top: 4px; display: flex; flex-direction: column; gap: 4px;">
+          <li><b>Check OTG Setting:</b> On brands like OnePlus, Oppo, Vivo, or Xiaomi, ensure <i>OTG Connection</i> is turned ON in Android Settings &rarr; System / Additional Settings.</li>
+          <li><b>Native Flasher Apps (Recommended for Mobile):</b> Download the 1-file factory image below (<code>esp-widget-keychain-2.0.6-build45-full.bin</code>) and flash it at offset <code>0x0</code> using an Android OTG flasher app (e.g. <b>ESP32 Loader</b>, <b>Serial USB Terminal</b>, or <b>PocketESP</b>). Native apps use Android's native USB driver stack directly!</li>
+        </ul>
       </div>
     </div>
 
